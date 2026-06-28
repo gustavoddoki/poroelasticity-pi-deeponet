@@ -61,7 +61,7 @@ def source_terms(config: BiotConfig, x, t, params: ManufacturedParameters):
         + params.pressure_amplitude * frequency * np.cos(wave) * exp_p
     )
     P = (
-        -params.displacement_amplitude * params.displacement_decay * frequency * np.sin(wave) * exp_u
+        params.displacement_amplitude * params.displacement_decay * frequency * np.sin(wave) * exp_u
         + config.hydraulic_conductivity
         * params.pressure_amplitude
         * frequency**2

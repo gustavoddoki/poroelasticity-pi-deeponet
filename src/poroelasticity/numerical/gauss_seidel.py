@@ -20,8 +20,8 @@ def _coefficients(config: BiotConfig, dx: float, dt: float):
     k = config.hydraulic_conductivity
     c1 = e / dx**2
     c2 = 1.0 / (2.0 * dx)
-    c3 = k / dx**2
-    c4 = 1.0 / (4.0 * e * dt)
+    c3 = k * dt / dx**2 + 1.0 / (4.0 * e)
+    c4 = -1.0 / (4.0 * e)
     return c1, c2, c3, c4
 
 

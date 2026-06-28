@@ -38,8 +38,11 @@ def compute_loss(config, model, branch_inputs, random_inputs, batch_size, real_s
     loss_pressure_equation = tf.reduce_mean(tf.square(u_xt - k * p_xx - random_inputs[3]))
     loss_equations = loss_displacement_equation / e**2 + loss_pressure_equation
 
-    loss_u_real = tf.reduce_mean(tf.abs((u - real_solution[0]) / real_solution[0]))
-    loss_p_real = tf.reduce_mean(tf.abs((p - real_solution[1]) / real_solution[1]))
+    epsilon = tf.cast(tf.keras.backend.epsilon(), tf.float64)
+    denominator_u = tf.maximum(tf.abs(real_solution[0]), epsilon)
+    denominator_p = tf.maximum(tf.abs(real_solution[1]), epsilon)
+    loss_u_real = tf.reduce_mean(tf.abs(u - real_solution[0]) / denominator_u)
+    loss_p_real = tf.reduce_mean(tf.abs(p - real_solution[1]) / denominator_p)
 
     x_left = tf.zeros((batch_size, 1), dtype=tf.float64)
     with tf.GradientTape(persistent=True) as tape:

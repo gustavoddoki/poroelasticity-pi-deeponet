@@ -76,6 +76,10 @@ term.
   pressure error compared with the tested Gauss-Seidel refinements, while the
   classical solver remained stronger for displacement accuracy.
 
+These are historical thesis results, not fresh reproductions. See
+[`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for the corrections applied during
+repository consolidation and the evidence required for a new reproduced run.
+
 ## Selected Figures
 
 PI-DeepONet training flow:
