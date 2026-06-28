@@ -1,0 +1,709 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%                                                                 %%
+%% Please do not use \input{...} to include other tex files.       %%
+%% Submit your LaTeX manuscript as one .tex document.              %%
+%%                                                                 %%
+%% All additional figures and files should be attached             %%
+%% separately and not embedded in the \TeX\ document itself.       %%
+%%                                                                 %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%\documentclass[referee,sn-basic]{sn-jnl}% referee option is meant for double line spacing
+
+%%=======================================================%%
+%% to print line numbers in the margin use lineno option %%
+%%=======================================================%%
+
+%%\documentclass[lineno,sn-basic]{sn-jnl}% Basic Springer Nature Reference Style/Chemistry Reference Style
+
+%%======================================================%%
+%% to compile with pdflatex/xelatex use pdflatex option %%
+%%======================================================%%
+
+%%\documentclass[pdflatex,sn-basic]{sn-jnl}% Basic Springer Nature Reference Style/Chemistry Reference Style
+
+%%\documentclass[sn-basic]{sn-jnl}% Basic Springer Nature Reference Style/Chemistry Reference Style
+\documentclass[sn-mathphys]{sn-jnl}% Math and Physical Sciences Reference Style
+%%\documentclass[sn-aps]{sn-jnl}% American Physical Society (APS) Reference Style
+%%\documentclass[sn-vancouver]{sn-jnl}% Vancouver Reference Style
+%%\documentclass[sn-apa]{sn-jnl}% APA Reference Style
+%%\documentclass[sn-chicago]{sn-jnl}% Chicago-based Humanities Reference Style
+%%\documentclass[sn-standardnature]{sn-jnl}% Standard Nature Portfolio Reference Style
+%%\documentclass[default]{sn-jnl}% Default
+%%\documentclass[default,iicol]{sn-jnl}% Default with double column layout
+
+%%%% Standard Packages
+%%<additional latex packages if required can be included here>
+%%%%
+
+%%%%%=============================================================================%%%%
+%%%%  Remarks: This template is provided to aid authors with the preparation
+%%%%  of original research articles intended for submission to journals published 
+%%%%  by Springer Nature. The guidance has been prepared in partnership with 
+%%%%  production teams to conform to Springer Nature technical requirements. 
+%%%%  Editorial and presentation requirements differ among journal portfolios and 
+%%%%  research disciplines. You may find sections in this template are irrelevant 
+%%%%  to your work and are empowered to omit any such section if allowed by the 
+%%%%  journal you intend to submit to. The submission guidelines and policies 
+%%%%  of the journal take precedence. A detailed User Manual is available in the 
+%%%%  template package for technical guidance.
+%%%%%=============================================================================%%%%
+
+\jyear{2023}%
+
+%% as per the requirement new theorem styles can be included as shown below
+\theoremstyle{thmstyleone}%
+\newtheorem{theorem}{Theorem}%  meant for continuous numbers
+%%\newtheorem{theorem}{Theorem}[section]% meant for sectionwise numbers
+%% optional argument [theorem] produces theorem numbering sequence instead of independent numbers for Proposition
+\newtheorem{proposition}[theorem]{Proposition}% 
+%%\newtheorem{proposition}{Proposition}% to get separate numbers for theorem and proposition etc.
+
+\theoremstyle{thmstyletwo}%
+\newtheorem{example}{Example}%
+\newtheorem{remark}{Remark}%
+
+\theoremstyle{thmstylethree}%
+\newtheorem{definition}{Definition}%
+
+\raggedbottom
+%%\unnumbered% uncomment this for unnumbered level heads
+
+\usepackage{makecell}
+\usepackage{subfig}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{multirow}
+\usepackage{multicol}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{bm}
+\usepackage{xcolor}
+\usepackage{siunitx}
+\usepackage{tablefootnote}
+\usepackage{physics}
+\usepackage{amsthm}
+
+
+\begin{document}
+
+\title[PI-DeepONets for Solving the One-Dimensional Biot’s Consolidation Model]{PI-DeepONets for Solving the One-Dimensional Biot’s Consolidation Model}% and a comparison with Gauss-Seidel method
+
+%%=============================================================%%
+%% Prefix	-> \pfx{Dr}
+%% GivenName	-> \fnm{Joergen W.}
+%% Particle	-> \spfx{van der} -> surname prefix
+%% FamilyName	-> \sur{Ploeg}
+%% Suffix	-> \sfx{IV}
+%% NatureName	-> \tanm{Poet Laureate} -> Title after name
+%% Degrees	-> \dgr{MSc, PhD}
+%% \author*[1,2]{\pfx{Dr} \fnm{Joergen W.} \spfx{van der} \sur{Ploeg} \sfx{IV} \tanm{Poet Laureate} 
+%%                 \dgr{MSc, PhD}}\email{iauthor@gmail.com}
+%%=============================================================%%
+
+\author[1]{\fnm{Gustavo D. M.} \sur{Doki}}\email{gustavodoki@ufpr.br}
+
+\author[1]{\fnm{Simone de F. T.} \sur{Gonçalves}}\email{simone.tg@ufpr.br}
+\equalcont{These authors contributed equally to this work.}
+
+\author*[1]{\fnm{Giuliana S.} \sur{Venter}}\email{giuliana.venter@ufpr.br}
+\equalcont{These authors contributed equally to this work.}
+
+\affil[1]{\orgdiv{Department of Mechanical Engineering, Technology Sector}, \orgname{Federal University of Parana}, \orgaddress{\city{Curitiba}, \postcode{81530-000}, \state{PR}, \country{Brazil}}}
+
+\abstract{Biot’s consolidation theory describes the time-dependent interaction between fluid flow and deformation in porous media and plays a central role in poroelastic modeling with applications in geomechanics, biomedical engineering, and subsurface flow. The associated mathematical model is a coupled system of partial differential equations (PDEs), often stiff and challenging to solve due to the disparity in physical parameter scales. In this work, we explore the use of Physics-Informed Deep Operator Networks (PI-DeepONets) to approximate the solution operators of the one-dimensional Biot’s consolidation model with real-valued physical constants. This approach combines the physics-informed training paradigm—where the loss is governed by the residuals of the PDE system—with the operator learning capabilities of DeepONets, allowing efficient generalization across input conditions. The proposed method is benchmarked against a classical Gauss-Seidel solver with a very fine mesh. The PI-DeepONet achieves a Mean Absolute Percentage Error (MAPE) of 2.13\% for the displacement field and 88.\% for the pressure field, with a processing time of only 30 milliseconds after training, compared to 4.56 hours for the Gauss-Seidel method. While the classical solver achieves superior accuracy in displacement, it incurs large errors in pressure under real parameter scaling. These results demonstrate the potential of PI-DeepONets to address numerically stiff poroelastic problems in scientific computing with significantly reduced inference times after training. The approach also shows promise for extending operator-learning techniques to other coupled PDE systems.}
+
+%\abstract{Biot's consolidation theory models the behavior of a coupled system of fluid and solid, with practical applications in engineering. Its mathematical model involves a system of partial differential equations dependent on time, necessitating numerical methods for solutions. Additionally, the Biot's consolidation theory model, with real values for its constants, presents a numerically difficult problem to solve, due to the constants vast difference in its magnitude order. This research proposes a novel approach to solve the system of equations, employing Physics-Informed Deep Operator Networks (PI-DeepONets). This method combines principles from Physics-Informed Neural Networks, in which the training loss is derived from the governing equations, and Deep Operator Networks, which uses the Universal Approximation Theorem to enable flexibilization in the input parameters. Therefore, the proposed approach is intended to obtain very good results, with very little processing time, after being pre-trained. Applied to the one-dimensional Biot's consolidation model with real constants, the approach was able to solve the system with Mean Absolute Percentage Errors (MAPE) of 2.13\% for the displacement variable and 88.63\% for the pressure variable, with a training time of 17.27 $h$ and a processing time of 30 $milliseconds$. The Gauss-Seidel method with very fine mesh, on the other hand, was able to solve the system with Mean Absolute Percentage Errors (MAPE) of 0.0013\% for the displacement variable and 9629\% for the pressure variable, with a processing time of 4.56 $h$ Therefore, it is clear that the proposed methodology was able to provide good results, being more than one hundred times better than the Gauss-Seidel method for the pressure variable, with extremely low processing time.}
+
+
+\keywords{Biot's consolidation, Poroelasticity, PINN, DeepONet, Gauss-Seidel}
+
+%%\pacs[JEL Classification]{D8, H51}
+
+%%\pacs[MSC Classification]{35A01, 65L10, 65L12, 65L20, 65L70}
+
+\maketitle
+
+\section{Introduction}\label{sec0}
+
+Recent advancements in numerical methods for poroelasticity have focused on improving computational efficiency and scalability. For instance, a parallelizable space-time approach utilizing an Uzawa solver with multigrid techniques has been proposed to address the computational challenges inherent in Biot’s consolidation model [1]. This method emphasizes the potential of combining classical iterative solvers with multigrid frameworks to enhance performance. Building upon these developments, our research explores the application of Physics-Informed Deep Operator Networks (PI-DeepONets) as a data-driven alternative, aiming to further reduce computational costs while maintaining accuracy.
+
+Recent advances in space-time parallelization techniques for poroelastic systems, such as the Uzawa solver with multigrid, have demonstrated promising improvements in computational efficiency for complex coupled problems \cite{daSilva2025uzawa}.
+
+The foundation of Physics-Informed Neural Networks (PINNs) has been widely explored as a strategy for integrating physical laws directly into learning frameworks, bridging the gap between machine learning and scientific computing \cite{raissi2022scientific}.
+
+Deep Operator Networks (DeepONets) have shown strong capabilities in learning nonlinear operators across varying input functions, with recent studies analyzing their training stability and generalization performance \cite{li2024training}.
+
+To improve physical fidelity, recent extensions of PINNs incorporate hard constraints and inverse design principles, yielding greater reliability in constrained domains \cite{lu2021physics}.
+
+Hybrid approaches such as Mesh-Informed Neural Networks illustrate the growing trend of blending mesh-based and mesh-free learning paradigms for operator approximation in finite element contexts \cite{franco2023mesh}.
+
+
+Biot's consolidation theory, also known as theory of poroelasticity, describes the behavior of a fluid-saturated deformable porous medium. A model for a one-dimensional consolidation problem was proposed by Terzaghi \cite{terzaghi1943} and Biot \cite{biot1941general}, and extended the theory to a general three-dimensional model that addresses the interaction between solid deformation and fluid motion. This theory describes the behavior of porous solids saturated with fluids and plays an important role in areas such as soil mechanics, petroleum engineering and biomedicine. Mathematically, Biot's theory is described as a coupled system of time-dependent partial differential equations (PDEs), for which analytical solutions are often impossible \cite{burden2011numerical}. Furthermore, the non-linear nature, the presence of saddle points, and the magnitude of the parameters attached to the variables of interest make this problem even more challenging.
+
+%To solve problems of this kind without analytical solutions, the use of numerical methods is essential. Over time, various numerical methods, such as the Gauss-Seidel method, have been developed to solve equations without analytical solutions quickly and efficiently. However, there is still a need to develop better numerical methods, as traditional methods face challenges such as high computational costs and non-convergence for more complex equations, such as Biot's consolidation model.
+
+To solve problems of this kind without analytical solutions, the use of numerical methods is essential. Over time, various numerical methods, such as the Gauss-Seidel method, have been developed to handle equations without analytical solutions quickly and efficiently. However, despite their utility, traditional methods often face significant limitations when applied to more complex systems like Biot’s consolidation model, which involves coupled fluid-solid interactions. These limitations include high computational costs, non-convergence, and numerical instabilities. Recent approaches have sought to address these challenges through advanced numerical methods, such as the multiphysics finite element method, which mitigates issues like the locking phenomenon \cite{ge2022newmultiphysicsfiniteelement}, and hybridizable discontinuous Galerkin methods that provide improved stability and accuracy for large-scale application \cite{Cesmelioglu2023}.
+
+Improving on the Gauss-Seidel method, Oosterlee and Gaspar \cite{oosterlee2008multigrid} introduced the Vanka smoother, which handles variables in a coupled way. Franco et al. \cite{franco2018multigrid} used the color ordering applied to the Vanka smoother using the Finite Difference and the Multigrid method, and compared it with the Time-Stepping and Waveform Relaxation methodologies. Luo et al. \cite{luo2017uzawa} applied the Uzawa smoother in the 2D poroelasticity equations with Finite Volume discretization, associated with the Multigrid method. Althought the methods provide good solutions for the poroelasticity problem, the processing time is a drawback, and it can become a significant hindrance when different domains need to be repeatedly solved.
+
+With the rapid growth of deep learning capabilities and its possibilities of generalization, robustness and quick processing time, its use has been rising in the realm of numerical analysis both in the changing of the model itself \cite{dehghani2021ann}, or the solving techniques \cite{herrmann2024deep,Firoozsalari2024}. Deep learning has proven to be a powerful tool in areas such as computational fluid dynamics (CFD), where it enhances turbulence modeling and simulates complex flows with increased accuracy and reduced computational cost \cite{Brunton2020,STEPANOV2023114980}. Similarly, in structural mechanics, deep learning models have been utilized to approximate stress-strain relationships, allowing for real-time predictions in materials science \cite{ZHU201956}. In optimization problems and inverse modeling, deep learning techniques have also been employed to bypass the often time-consuming iterative processes of classical methods, significantly reducing computation time while maintaining accuracy \cite{10255379}. 
+
+One of the approaches that has been studied and applied to different types of problems due to its robustness is Physics-Informed Neural Networks (PINNs), which are neural networks that use the model's governing equations as a loss in its training \cite{bai2023physics}. This eliminates the need for large data sets and allows for solutions that respect the underlying physics of the problem.  PINNs have been used in problems of heat transfer \cite{10.1115/1.4050542}, fluid mechanics \cite{Cai2021} and poroelasticity \citep{haghighat2022physics} with good results. Haghighat et al. (2021) \citep{haghighat2022physics} carried out a study on the application of PINNs in poroelasticity models, in which good results were obtained, but reported problems with the slowness of training and the difficulty in obtaining an accurate result.
+
+According to Koric and Abueidda (2022) \cite{koric2023data}, after training, PINNs are capable of quickly solving a problem numerically, however, they have little flexibility, making it necessary, for different parameters and conditions, to retrain the PINN. In this case, one falls on the same aforementioned drawback the classical methods have. Physics-Informed Deep Operator Networks (DeepONets) generalize traditional solvers by learning operators from data, enabling flexible input parameterization and efficient solution generation for complex PDEs, and can be used to overcome this inherent problem of PINNs \cite{lu2019deeponet}. Lu et al. (2021) \cite{lu2019deeponet} used the Deep Operator Neural Network (DeepONet), which combines the outputs of two neural networks to arrive at the result, to solve the equation for a heat conduction problem. After a pre-training, the ANN (Artificial Neural Network) has been able to be used to solve the equation for different input domains with very little processing time.
+
+In this research, therefore, it is proposed to numerically solve the system of poroelasticity equations by combining PINN with DeepONet (PI-DeepONet), in a novel deep learning architecture, comparing the processing time and accuracy in comparison to Gauss-Seidel method. In Section 2, the poroelasticity, PINN and DeepONet model used in this study will be presented, as well as Gauss-Seidel method used for comparison purposes. In Section 3, the numerical methodology used to compute and compare the results will be presented. In Section 4, the results will be presented. Finally, in Section 5, the conclusions will be presented.
+
+\section{Mathematical Methods}\label{sec1} 
+
+\subsection{Biot's consolidation model}
+
+Biot's problem can be formulated in two, three, or four fields, depending on the variables of interest. In this research, our focus centers on the classical scenario of Biot's consolidation, tackling a saturated, homogeneous, isotropic, and incompressible porous medium. This specific formulation, outlined by Gaspar et al. \cite{gaspar2003finite,franco2018multigrid} for the one-dimensional case, is expressed through the following coupled equations:
+
+\begin{equation}
+\label{eq:displacement_eq}
+-E\frac{\partial^2u}{\partial x^2} + \frac{\partial p}{\partial x} = U(x,t)
+\end{equation}
+
+\begin{equation}
+\label{eq:pressure_eq}
+\frac{\partial}{\partial t}\left(\frac{\partial u}{\partial x}\right) - K\frac{\partial^2p}{\partial x^2} = P(x,t)
+\end{equation}
+
+Here, \(E\) denotes the elastic modulus in \(Pa\) that represents the capacity of the porous solid to be deformed, \(K\) represents hydraulic conductivity in \(m/s\) that represents the capacity of the fluid to move between the pores of the solid, \(U(x,t)\) is the density of the force applied to the body in \(Pa/m\), and \(P(x,t)\) denotes the injection or extraction force of the fluid within the porous medium in \(s^{-1}\). The displacement is defined by \(u(x,t)\) in \(m\), and the pressure by \(p(x,t)\) in Pa, where \(x\) is the spatial variable in \(m\), and \(t\) is the temporal variable in \(s\). We consider a spatial domain \([0,L]\) and a temporal domain \([0,tf]\). Equation \ref{eq:displacement_eq} is referred to as the displacement equation, while Equation \ref{eq:pressure_eq} is the pressure equation.
+
+For the left boundary conditions, we assume free drainage (permeable mean) without variation in displacement,
+\begin{equation}
+\label{eq:displacement_bcl}
+E\pdv{u(0,t)}{x} = 0
+\end{equation}
+\begin{equation}
+\label{eq:pressure_bcl}
+p(0,t) = 0,
+\end{equation}
+on the right boundary, we assume stiffness without pressure variation,
+\begin{equation}
+\label{eq:displacement_bcr}
+u(L,t) = 0
+\end{equation}
+\begin{equation}
+\label{eq:pressure_bcr}
+K\pdv{p(L,t)}{x} = 0.
+\end{equation}
+these boundary conditions define the behavior of the system at the respective boundaries, reflecting the physical constraints imposed on the displacement \(u\) and pressure \(p\) at \(x=0\) and \(x=L\).
+
+\subsection{Gauss-Seidel Method}
+
+In the realm of numerical solutions for equations like those in Biot's consolidation model, the Gauss-Seidel method and its variations stand out. In this reasearch, we employ a basic Gauss-Seidel solver as a benchmark to assess the efficacy of Physics-Informed Deep Operator Networks.
+
+To implement the Gauss-Seidel Method, the first step involves discretizing the equations and isolating the terms \(u_i\) and \(p_i\). The literature offers several discretization models for partial differential equations. Common spatial discretization methods include finite differences, finite volumes, and finite elements. For temporal discretization, Euler, Crank-Nicolson, and Runge-Kutta methods are extensively employed \cite{versteeg2007introduction}.
+
+In our work, we opt for the Finite Volume Method (FVM) for spatial discretization. This method subdivides the domain into multiple control volumes, as can be seen in Figure \ref{fig:fvm}, preserving conservation laws as its principal characteristic.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.5\textwidth]{fvm.png}
+    \caption{Finite Volume Method}
+    \label{fig:fvm}
+\end{figure}
+
+For temporal discretization, our choice is the Total Implicit Euler Method. This method utilizes only the points in the same time-step or in the same position in the last time-step to calculate values at specific points, as can be seen in Figure \ref{fig:eulerimplicit}. In contrast, the Explicit Euler method uses only the points from the last time step for calculations.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.5\textwidth]{eulerimplicit.png}
+    \caption{Total Implicit Euler}
+    \label{fig:eulerimplicit}
+\end{figure}
+
+Upon discretizing the domains using these methods, we derive numerical models represented by Equations \ref{eq:numerical_eq_displacement} and \ref{eq:numerical_eq_pressure}. These equations correspond to the discretization of Equations \ref{eq:displacement_eq} and \ref{eq:pressure_eq}, respectively.
+
+\begin{equation}
+\label{eq:numerical_eq_displacement}
+u_i = \frac{1}{2}(u_{i-1}+u_{i+1}) + \frac{\Delta x}{4E}(p_{i-1}-p_{i+1}) + \frac{(\Delta x)^2}{2E}U(x_i,t_i),
+\end{equation}
+
+\begin{equation}
+\label{eq:numerical_eq_pressure}
+\begin{split}
+p_i = \frac{1}{2}(p_{i-1} + p_{i+1}) -\frac{\Delta x}{8EK\Delta t + 2\Delta x}(p^o_{i-1}-2p^o_i+p^o_{i+1}) + \\ + \frac{E \Delta x}{4EK\Delta t + \Delta x}((u_{i-1}-u_{i+1}) + (u^o_{i-1}-u^o_{i+1}) + 2\Delta x \Delta tP(x_i,t_i))
+\end{split}
+\end{equation}
+
+Here, \(\Delta x\) represents the size of a spatial discretization control volume, and \(\Delta t\) is the time step size. The smoothing term (\ref{eq:smoothing_term}), as used in Gaspar et al. \cite{gaspar2007efficient} to reformulate the poroelasticity equation, is coupled in Equation \ref{eq:numerical_eq_pressure} to enhance system stability without compromising results.
+
+\begin{equation}
+\label{eq:smoothing_term}
+-\frac{\left(\Delta x\right)^2}{4E}\frac{\partial}{\partial t}\left(\frac{\partial^2p}{\partial x^2}\right)
+\end{equation}
+
+Incorporating the boundary conditions, as given by Equations \ref{eq:displacement_bcl}, \ref{eq:pressure_bcl}, \ref{eq:displacement_bcr}, and \ref{eq:pressure_bcr}, into the calculations is achieved using the Fictitious Volume Method \cite{versteeg2007introduction} at the extremities of the spatial domain, as can be seen in Figure \ref{fig:volumesficticios}. This incorporation results in the following numerical equations:
+
+\begin{equation}
+\label{eq:displacement_bcl_numerical}
+u_0 = u_1 
+\end{equation}
+\begin{equation}
+\label{eq:pressure_bcl_numerical}
+p_0 = -p_1
+\end{equation}
+\begin{equation}
+\label{eq:displacement_bcr_numerical}
+u_{N+1} = -u_{N}
+\end{equation}
+\begin{equation}
+\label{eq:pressure_bcr_numerical}
+p_{N+1} = p_{N}
+\end{equation}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.7\textwidth]{volumesficticios.png}
+    \caption{Fictitious Volume Method}
+    \label{fig:volumesficticios}
+\end{figure}
+
+With the numerical model in place, the process of determining the solution for each time step starts with the initial estimation of a solution vector. Subsequently, multiple iterations are performed until the results converge. In this research, convergence is deemed achieved when the following inequality holds:
+
+\begin{equation}
+    \frac{\|\mathbf{R_u}\|_\infty + \|\mathbf{R_p}\|_\infty}{\|\mathbf{R_{u,0}}\|_\infty + \|\mathbf{R_{p,0}}\|_\infty} < threshold,
+\end{equation}
+where \(\|\cdot\|_\infty\) represents the \(L_\infty\) norm operator, and \(\mathbf{R_u}\) and \(\mathbf{R_p}\) denote the residual vectors of the displacement and pressure equations, respectively. Similarly, \(\mathbf{R_{u,0}}\) and \(\mathbf{R_{p,0}}\) represent the residuals of the displacement and pressure equations calculated for the initial estimate. The residual value for each point can be computed using the following equations:
+
+\begin{equation}
+\label{eq:residual_numerical_eq_displacement}
+R_{u,i} = \frac{u_{i-1}+u_{i+1}}{2(\Delta x)^2} + \frac{p_{i-1}-p_{i+1}}{8E} + \frac{(\Delta x)^2}{2E}U(x_i,t_i) - u_i
+\end{equation}
+\begin{equation}
+\label{eq:residual_numerical_eq_pressure}
+\begin{split}
+R_{p,i} = \frac{E \Delta x}{4EK \Delta t + (\Delta x)^2}(u_{i-1}-u_{i+1}) + (u^o_{i-1}-u^o_{i+1}) + \\
++ \frac{4EK \Delta t + (\Delta x)^2}{E \Delta x}(p_{i-1} + p_{i+1}) + \frac{\Delta x}{2E}(p^o_{i-1}-2p^o_i+p^o_{i+1}) + \\ + 4\Delta x \Delta tP(x_i,t_i)) - p_i
+\end{split}
+\end{equation}
+
+\subsection{Physics-Informed Deep Operator Networks}
+\subsubsection{Physics-Informed Neural Networks}
+
+Addressing challenges related to acquiring data from complex physical, biological, or engineering systems, coupled with the limitations of traditional neural networks in encapsulating inherent physical laws based solely on data, Raissi et al. \cite{raissi2019physics} introduced a groundbreaking class of neural networks termed Physics-Informed Neural Networks (PINNs). In contrast to conventional methods, PINNs harness the governing equations of a system to model the cost functions of the neural network.
+
+Although it is conceivable to incorporate labeled data alongside system equations for PINN training, our approach exclusively relies on utilizing the poroelasticity equations during training, characterizing our PINN as an unsupervised neural network. The cost function in this research is defined as the aggregate of mean squared errors corresponding to the equations
+
+\begin{equation}
+\label{eq:loss_displacement_eq}
+MSE_U = \frac{1}{QR}\sum_{i=1}^{Q}\sum_{j=1}^{R}\left(-E\pdv[2]{u(x_i,t_j)}{x} + \pdv{p(x_i,t_j)}{x} - U\right)^2
+\end{equation}
+\begin{equation}
+\label{eq:loss_pressure_eq}
+MSE_P = \frac{1}{Q R}\sum_{i=1}^{Q}\sum_{j=1}^{R}\left(\pdv{}{t}\left(\pdv{u(x_i,t_j)}{x}\right) - K\pdv[2]{p(x_i,t_j)}{x} - P\right)^2
+\end{equation}
+for the boundary conditions on the far left,
+\begin{equation}
+MSE_{LBC} = \frac{1}{R}\sum_{j=1}^{R}\left(\left(\pdv{u(0,t_j)}{x}\right)^2 + (p(0,t_j))^2\right)
+\end{equation}
+for the boundary conditions on the far right,
+\begin{equation}
+MSE_{RBC} = \frac{1}{R}\sum_{j=1}^{R}\left(u(L,t_j))^2 + \left(\pdv{p(L,t_j)}{x}\right)^2\right)
+\end{equation}
+and for the initial conditions,
+\begin{equation}
+MSE_{IC} = \frac{1}{Q}\sum_{i=1}^{Q}((u(x_i,0) - u_0(x_i))^2 + (p(x_i,0) - p_0(x_i))^2).
+\end{equation}
+The overall cost function is
+\begin{equation}
+\label{eq:cost_function}
+MSE = \frac{1}{E^2} MSE_{U} + MSE_{P} + MSE_{LBC} + MSE_{RBC} + MSE_{IC}  
+\end{equation}
+Notice that \(MSE_{U}\) is multiplied by \(1/E^2\) to balance the order of magnitude, as \(E\) is typically a large number. Similar to the Gauss-Seidel method, the residual of the equations serves as the convergence criteria.
+
+\subsubsection{Deep Operator Networks} \label{section:DeepONet}
+While PINNs are limited to calculating results only for the equation with the exact same parameters used during training and require retraining for any changes in equation parameters such as constants or source terms, Lu et al. \cite{lu2019deeponet} introduced a novel neural network architecture based on the Universal Approximation Theorem for Operators: Deep Operator Networks (DeepONet). This advancement enables the training of a neural network to accommodate a range of equation parameters. Unlike traditional approaches in which the function is modeled, DeepONet focuses on modeling the operator that results in the function. Typically, this neural network comprises two subnets: the trunk and the branch, illustrated in Figure \ref{fig:DeepONet architecture}.
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.7\textwidth]{deeponet.png}
+    \caption{Common Deep Operator Network}
+    \label{fig:DeepONet architecture}
+\end{figure}
+
+%This architecture is enough for equations that have one variable equation parameter. In this study, we will have four variable equation parameters, the source terms \(U\) and \(P\), and the initial conditions \(u_0\) and \(p_0\), therefore a DeepONet with four branch nets is necessary, one for each variable equation parameter, and one trunk net for the space and time variables. We then need two DeepONets, one to calculate the displacement variable and another one to calculate the pressure variable. The final proposed architecture can be seen in Figure \ref{fig:DeepONet_Biot}.
+
+This architecture is sufficient for equations with a single variable parameter. However, in this study, we are working with four variable parameters: the source terms \(U\) and \(P\), as well as the initial conditions \(u_0\) and \(p_0\). Consequently, we require a DeepONet with four branch networks—one for each variable parameter—and a single trunk network for the space and time variables. Additionally, two separate DeepONets are needed: one to compute the displacement variable and another for the pressure variable. The final proposed novel architecture is illustrated in Figure \ref{fig:DeepONet_Biot}.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{deeponet_biot.png}
+    \caption{Deep Operator Network for Biot's consolidation equation}
+    \label{fig:DeepONet_Biot}
+\end{figure}
+
+\subsubsection{Combining PINN and DeepONet}
+
+Combining the modeling capability of Physics-Informed Neural Networks (PINNs), which integrate neural networks with mathematical models, and the operator-approximating capacity of Deep Operator Networks (DeepONets), results in the creation of Physics-Informed Deep Operator Networks (PI-DeepONet). The training process for PI-DeepONets follows the outlined scheme:
+
+\begin{enumerate}
+
+    \item Forward Propagation: Utilizing DeepONets, displacement and pressure values are computed for various spatial \(x\) and temporal \(t\) variable values. This process includes estimates along the contour where \(x\) is equal to \(0\) or \(L\) and at the initial time (\(t=0\)).
+
+    \item Cost Function: The calculated displacement and pressure values are employed to determine the error through the cost function, as defined by equation \ref{eq:cost_function}. Automatic differentiation is employed to obtain the partial derivatives present in the equations.
+
+    \item Optimization: The weights and biases of DeepONets are optimized using the Adaptive Movement Estimation Algorithm (Adam). This algorithm facilitates the iterative refinement of the neural network's parameters to enhance its predictive capabilities.
+\end{enumerate}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{PIDeepONet.png}
+    \caption{PI-DeepONet Training Flowchart}
+    \label{fig:PI-DeepONet}
+\end{figure}
+
+
+In the system architecture, illustrated in Figure \ref{fig:PI-DeepONet}, there are two DeepONets utilizing the structure depicted in Figure \ref{fig:DeepONet_Biot}, both receiving the same inputs \(x\), \(t\), \(U\), \(P\), \(u_0\) and \(p_0\). The distinction lies in one DeepONet producing the displacement variable \(u\)  while the other yields the pressure variable \(p\). With these outputs, the loss can be calculated to adjust the weights and biases of the neural network through the optimizer. An important note is that the two DeepONets are trained as a single neural network.
+
+\section{Numerical solution methodology}
+
+\subsection{Equation Parameters and Computing Environment}
+\label{section:Equation Parameters}
+
+In the present research, we will perform simulations in a one-dimensional space domain of  \(\left[0,0.5\right]\) \(m\), and in a time domain of \(\left[0,1\right]\) \(s\). For parameters \(E\) and \(K\), two combinations will be tested: a hypothetical combination with \(E=1 Pa\) and \(K=1 m/s\); and a realistic combination with \(E=10^8 Pa\) and \(K=10^{-5} m/s\) which are typical values for very fine sand
+\cite{jorgensen1980relationships}.
+
+To train the PI-DeepONet, the source terms \(U\) and \(P\) were defined as random functions modeled as follows:
+\begin{equation}
+U = \left(AE\pi e^{-mt+n} + Be^{-wt+z}\right)\pi\cos{(\pi x)}
+\end{equation}
+\begin{equation}
+P = \left(Ame^{-mt+n} + BK\pi e^{-wt+z}\right)\pi\sin{(\pi x)},
+\end{equation}
+in which \(A,B\in\left[0.5, 3\right]\), \(m,w\in\left[0.5, 2\right]\) and \(n,z\in\left[-2, 0\right]\). These source terms models are obtained from the method of fabricated solutions \cite{versteeg2007introduction} wherein the terms are determined from the model equations with predefined analytical solutions:
+\begin{equation}
+u = A\cos{(\pi x)}e^{-mt+n}
+\end{equation}
+\begin{equation}
+p = B\sin{(\pi x)}e^{-wt+z}.
+\end{equation}
+
+In real cases, the analytical solution is unknown. To measure the precision of the numerical methods, however, we will use cases where the exact solution is possible to be obtained.
+
+The Gauss-Seidel method and the PI-DeepONet code are implemented in Python 3.11, using Tensorflow 2 for the neural network. Training of the PI-DeepONet and simulations for both methods were conducted using a RTX 4000 GPU.
+
+\subsection{Gauss-Seidel Method}
+
+The accuracy and processing time of traditional numerical methods depend on the refinement of the domain's mesh. Greater accuracy is achieved with an increased number of control volumes in the spatial domain and time steps in the temporal domain. However, this improvement comes at the cost of longer processing times. In this study, we will run simulations with the Gauss-Seidel method for poroelasticity method under three different refinement of the meshes: 32 control volumes and 64 time steps, 64 control volumes and 128 time steps, and 128 control volumes and 256 time steps.
+
+Additionally, the accuracy and processing time are influenced by the initial estimate and the convergence criteria threshold. Assuming that the outcome at each time step closely resembles the initial condition, the initial estimate for the first time step mirrors the initial conditions. For subsequent time steps, it is based on the last values from the preceding time step. The convergence criteria threshold is set at \(10^{-5}\).
+
+\subsection{PI-DeepONet}
+As mentioned in Section \ref{section:DeepONet}, the PI-DeepONet architecture we will use consists of one trunk net and four branch nets. The trunk net takes two parameters as input: position \(\left(u\right)\) and time \(\left(t\right)\). Each branch net receives one of the following inputs:
+
+\begin{enumerate}
+\item Density of the force applied to the body \((U)\)
+\item Injection or extraction force of the fluid \((P)\)
+\item Initial condition of displacement \((u_0)\)
+\item Initial condition of pressure \((p_0)\)
+\end{enumerate}
+
+Since the inputs are continuous functions, they are discretized into a vector to serve as input to our equations. For the source terms \(U\) and \(P\), we discretized the space domain into 51 points and the time domain into 101 points, resulting in a vector of \(51 \times 101 = 5050\) parameters, arranged in ascending order first by time and then by position. For the initial conditions \((u_0)\) and \((p_0)\), we consider the initial time as \(t=0\) and discretize the space domain into 51 points, resulting in a vector of 51 parameters, arranged in ascending order by position. These parameters constitute the input layer. With the exception of this layer, every subsequent layer in the architecture consists of 128 neurons.
+
+In each epoch, a sample with a size of 256 is randomly generated, comprising the domain variables \(x\) and \(t\), the source terms functions \(U\) and \(P\), and the initial conditions \(u_{0}\) and \(p_{0}\), following the interval restrictions imposed in section 3.1. As the equation is known to have saddle points during convergence, a cyclical learning rate \cite{li2020cyclical} with exponential decay will be used. A representation of the changing learning rate throughout the epochs can be seen in Figure \ref{fig:cyclical}. In the Figure, \(lim_{min}\) is \(-7\) and \(\Delta lim\) is 4, and the learning rate (\(lr\)) is obtained by
+
+\begin{equation}
+log_{10}(lr) = lim_{min} + \abs{\Delta lim - step \times \Delta lim / step\_size} * factor,
+\end{equation}
+in which \(step\_size\) is 10, \(step\) is variable varying one by one from 1 to 20, and is being reset to 1 every time that reach in 20, and \(factor\) is calculated by
+\begin{equation}
+factor = 0.99999^{epoch-1}.
+\end{equation}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{learning rate.png}
+    \caption{Cyclical Learning Rate (log10)}
+    \label{fig:cyclical}
+\end{figure}
+
+Additionally, after training the PI-DeepONet, we will fine-tune the model for a specific scenario used to make the simulations with Gauss-Seidel in Section \ref{section:Gauss-Seidel result}. In other words, we will fix the parameters of equation and the time \(t=1\) \(s\) to train the already trained PI-DeepONet model for more epochs.
+
+\subsection{Evaluation Method}
+
+The evaluation of the proposed method will be performed using the following metrics:
+\begin{enumerate}
+\item \textbf{Processing time}: the amount of time each of the methods needs to obtain the result of the poroelasticity equations, one of the main metrics we will observe, as it defines whether PI-DeepONets are capable of replacing traditional numerical methods for this problem.
+\item \textbf{Training time}: the amount of time used to train the PI-DeepONet. This metric is important to estimate how many simulations are needed to compensate for the use of PI-DeepONets in the poroelasticity problem.
+\item \textbf{Measure of error}: measured by the mean absolute percentage error given by
+\begin{equation}
+    MAPE = \frac{1}{N}\sum_{i=1}^{N}\frac{\abs{y - \hat{y}}}{y},
+\end{equation}
+in which \(N\) is the number of points, \(y\) and \(\hat{y}\) are the real value and the predicted value of the variable being measured, respectively.
+
+\end{enumerate}
+
+\section{Results}
+\subsection{Gauss-Seidel Method} \label{section:Gauss-Seidel result}
+
+For the simulations using the Gauss-Seidel method, a random set of equation parameters defined in Section 3.1 was generated, one for the hypothetical combination of parameters and one for the realistic combination of parameters. This set was then utilized consistently across all combinations of meshes. The results are summarized on Table \ref{tab:GS results E1K1} for hypothetical combination of parameters and \ref{tab:GS results} for realistic combination of parameters, in which \(N_x\) is the number of control volumes, \(N_t\) is the number of time steps, \(MAPE_u\) and \(MAPE_p\) are the mean absolute percentage error for displacement and pressure variables, respectively, calculated on the time \(t=1 s\).
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|c|c|c|c|c|}
+    \hline
+    \(N_x\) & \(N_t\) & Processing Time (s) & \(MAPE_u\) & \(MAPE_p\)\\
+    \hline
+    32 & 64 & 67.18080 & 0.120044\% & 0.1238365\% \\
+    \hline
+    64 & 128 & 1,151.189 & 0.053505\% & 0.069521\% \\
+    \hline
+    128 & 256 & 17,309.32 & 0.024454\% & 0.035546\% \\
+    \hline
+  \end{tabular}
+  \caption{Gauss-Seidel method results - hypothetical combination}
+  \label{tab:GS results E1K1}
+\end{table}
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|c|c|c|c|c|}
+    \hline
+    \(N_x\) & \(N_t\) & Processing Time (s) & \(MAPE_u\) & \(MAPE_p\)\\
+    \hline
+    32 & 64 & 68.93795 & 0.020135\% & 49,543.15\% \\
+    \hline
+    64 & 128 & 1,186.211 & 0.005046\% & 24,185.76\% \\
+    \hline
+    128 & 256 & 16,425.03 & 0.001265\% & 9,628.934\% \\
+    \hline
+  \end{tabular}
+  \caption{Gauss-Seidel method results - realistic combination}
+  \label{tab:GS results}
+\end{table}
+
+
+\subsection{PI-DeepONet}
+
+A PI-DeepONets were trained over 100,000 epochs for each combination of parameters \(E\) and \(K\),
+
+\subsubsection{Hypothetical Combination of Parameters}
+
+Using an unrealistic combination of parameters \(E=1\, \text{Pa}\) and \(K=1\, \text{m/s}\), the lowest recorded loss value was \(3.772719E-2\). Therefore, the model that will be used is the one corresponding to this minimum loss value during training.
+
+In Figure \ref{fig:Evolucao Loss E1K1}, we can see that the loss function tends to decrease along the training. However, it becomes more difficult for the loss to decrease further as it approaches lower values.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{loss_E1K1.png}
+    \caption{Loss Evolution}
+    \label{fig:Evolucao Loss E1K1}
+\end{figure}
+
+The MAPE evolution along the training can be visualized in Figure \ref{fig:Evolucao MAPE E1K1}. There we can observe that the error exhibits a slight tendency to decrease throughout the training, but it requires more training to achieve lower errors.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{mape_E1K1.png}
+    \caption{MAPE Evolution}
+    \label{fig:Evolucao MAPE E1K1}
+\end{figure}
+
+Running a single simulation using this model for random source functions defined in Section \ref{section:Equation Parameters}, we obtained the results for \(t=1s\) presented in Table \ref{tab:PI-DeepONet results E1K1}.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|c|c|c|c|c|}
+    \hline
+    Training Time (h) & Processing Time (s) & Number of points & \(MAPE_u\) & \(MAPE_p\)\\
+    \hline
+    14.78 & 0.08938315 & 256 & 2.707100\% & 25.180975\% \\
+    \hline
+  \end{tabular}
+  \caption{Physics-Informed Deep Operator Networks results}
+  \label{tab:PI-DeepONet results E1K1}
+\end{table}
+
+
+Fixing the source terms and the time \(t=1s\) used in this single simulation, we fine-tuned the model for an additional 10,000 epochs. The evolution of the loss function can be visualized in Figure \ref{fig:Evolucao Loss E1K1 fine-tuning}, and the evolution of the MAPE can be visualized in Figure \ref{fig:Evolucao MAPE E1K1 fine-tuning}.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{loss_E1K1_finetuned.png}
+    \caption{Loss Evolution}
+    \label{fig:Evolucao Loss E1K1 fine-tuning}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{mape_E1K1_finetuned.png}
+    \caption{MAPE Evolution}
+    \label{fig:Evolucao MAPE E1K1 fine-tuning}
+\end{figure}
+
+Running a simulation with the same source terms, we obtained the results presented in Table \ref{tab:PI-DeepONet results E1K1 fine-tuning}.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|c|c|c|c|c|}
+    \hline
+    Fine-tuning Time (h) & Processing Time (s) & Number of points & \(MAPE_u\) & \(MAPE_p\)\\
+    \hline
+    1.723 & 0.03131437 & 256 & 9.886141\% & 17.05085\% \\
+    \hline
+  \end{tabular}
+  \caption{Fine-tuned PI-DeepONet results}
+  \label{tab:PI-DeepONet results E1K1 fine-tuning}
+\end{table}
+
+\subsubsection{Realistic Combination of Parameters}
+
+The model preserved from the training is the one in the epoch with the lowest recorded loss value, which was ($2.456165E-4$), ensuring that the saved model represents the state at which the neural network achieved optimal performance in minimizing the loss function.
+
+Figure \ref{fig:Evolucao Loss} depicts the evolution of the training loss. It clearly illustrates a convergence trend, albeit at a relatively slow rate. From this observation, we can infer that the PI-DeepONet possesses the capability to model the operators of the Biot's consolidation model for both displacement and pressure variables.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{evolucao_loss.png}
+    \caption{Loss Evolution}
+    \label{fig:Evolucao Loss}
+\end{figure}
+
+Figure \ref{fig:Evolucao MAPE} illustrates the evolution of the Mean Absolute Percentage Error (\(MAPE\)) for displacement and pressure variables. 
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{MAPE.png}
+    \caption{MAPE Evolution}
+    \label{fig:Evolucao MAPE}
+\end{figure}
+
+As can be seen, the \(MAPE_u\) demonstrates a decreasing trend, while \(MAPE_p\) remains relatively stable. This discrepancy arises from the substantial weight assigned to variable \(u\) in both equations of the model. In the displacement equation, the elastic modulus parameter \(E\) is coupled with variable \(u\), and in the pressure equation, the hydraulic conductivity parameter is linked to the pressure variable. Upon analysis, two potential scenarios emerge: firstly,  \(MAPE_p\) may decrease as the loss equation approaches a sufficiently low value to impact the pressure variable in both equations. Alternatively, the pressure variable could be stuck in a plateau while the displacement variable adjusts to a value that minimizes the loss equation for this pressure value. Therefore, drawing a definitive conclusion requires further training of the PI-DeepONet.
+
+Although the training \(MAPE_p\) remains stable during training, it is still a significantly smaller value, compared to the Gauss-Seidel Method seen in Table \ref{tab:GS results}. In order to further test the trained PI-DeepONet, we conducted a simulation using the same equation parameters employed in the Gauss-Seidel method simulation on the time \(t=1 s\) and for 256 points in the spatial domain equal to the points that would be calculated if we simulated with the Gauss-Seidel method for this level of refinement. Impressively, the PI-DeepONet generated results for 256 points in a mere 0.028 seconds, as can be seen in Table \ref{tab:PI-DeepONet results}.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|c|c|c|c|c|}
+    \hline
+    Training Time (h) & Processing Time (s) & Number of points & \(MAPE_u\) & \(MAPE_p\)\\
+    \hline
+    17.27 & 0.02765274 & 256 & 2.125300\% & 88.62634\% \\
+    \hline
+  \end{tabular}
+  \caption{Physics-Informed Deep Operator Networks results}
+  \label{tab:PI-DeepONet results}
+\end{table}
+
+Fine-tuning the model for an additional 10,000 epochs, while keeping the equation parameters fixed at the values used in the simulations with the Gauss-Seidel method and at the time \(t=1\) \(s\), resulted in the outcomes presented in Table \ref{tab:PI-DeepONet fine-tuned results}. These results were obtained by computing values for the same points that the PI-DeepONet evaluated.
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|c|c|c|c|c|}
+    \hline
+    Fine-tuning Time (h) & Processing Time (s) & Number of points & \(MAPE_u\) & \(MAPE_p\)\\
+    \hline
+    1.547 & 0.03240252 & 256 & 0.106704\% & 86.79210\% \\
+    \hline
+  \end{tabular}
+  \caption{Fine-tuned PI-DeepONet results}
+  \label{tab:PI-DeepONet fine-tuned results}
+\end{table}
+
+In the case of the fine-tuned PI-DeepONet, the attained loss reached a minimal value of 2.851893E-5. Notably, a lower MAPE was achieved for the displacement variable, although the MAPE for the pressure variable remained relatively high. Figure \ref{fig:Loss PI-DeepONet Fine-tuned} illustrates a gradual reduction in loss over the training epochs. Additionally, Figure \ref{fig:Error PI-DeepONet Fine-tuned} depicts the MAPE during training, revealing that both displacement and pressure variables did not exhibit significant improvement.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{loss_finetuned_deeponet.png}
+    \caption{Loss evolution of fine-tuned PI-DeepONet}
+    \label{fig:Loss PI-DeepONet Fine-tuned}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{error_evolution_finetuned.png}
+    \caption{Error evolution of fine-tuned PI-DeepONet}
+    \label{fig:Error PI-DeepONet Fine-tuned}
+\end{figure}
+
+
+\subsection{Comparison between the methods}
+
+\subsubsection{Hypothetical Combination of Parameters}
+
+Comparing the results from Tables \ref{tab:GS results E1K1} and \ref{tab:PI-DeepONet results E1K1}, it can be seen that the Gauss-Seidel method exhibits higher precision in computing both displacement and pressure variables. However, PI-DeepONet demonstrates superior speed compared to Gauss-Seidel, enabling the computation of multiple simulations in a matter of seconds.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{u_error_E1K1.png}
+    \caption{Absolute percentage error of displacement - hypothetical case}
+    \label{fig: Error displacement E1K1}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{p_error_E1K1.png}
+    \caption{Absolute percentage error of pressure - hypothetical case}
+    \label{fig:Error pressure E1K1}
+\end{figure}
+
+Analyzing Figure \ref{fig: Error displacement E1K1}, we observe that the error of the PI-DeepONet is generally lower than that of the Gauss-Seidel method for most of the x-axis. However, towards the end of the axis, the error in the displacement variable increases significantly, contributing to the higher MAPE computed in Table \ref{tab:GS results E1K1}.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{real_results_comparison_E1K1.png}
+    \caption{Comparison with real results - hypothetical case (real solution is on the left while the PI-DeepONet solution is on the right)}
+    \label{fig:Real result comparison E1K1}
+\end{figure}
+
+\subsubsection{Realistic Combination of Parameters}
+
+Comparing the results from Tables \ref{tab:GS results} and \ref{tab:PI-DeepONet results}, it is evident that the Gauss-Seidel method exhibits superior precision in computing the displacement result, reflected in its lower MAPE (Figure \ref{fig:Error displacement}). However, for the computation of the pressure result, the PI-DeepONet outperforms the GS method, achieving a significantly lower MAPE, especially for the tested mesh refinement scenarios (Figure \ref{fig:Error pressure}).
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{displacement_error_finetuned.png}
+    \caption{Absolute percentage error of displacement - realistic case}
+    \label{fig:Error displacement}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{pressure_error_finetuned.png}
+    \caption{Absolute percentage error of pressure - realistic case}
+    \label{fig:Error pressure}
+\end{figure}
+
+In both methods, the error in the displacement variable is consistently lower than the error in the pressure variable, a phenomenon attributed to the influence of parameters \(E\) and \(K\). A closer examination of the residual equations used for the convergence criteria in the Gauss-Seidel method reveals that parameter \(E\) acts as a divisor for the pressure variable in Equation \ref{eq:residual_numerical_eq_displacement}, while \(K\) serves as a multiplier for the pressure variable in Equation \ref{eq:residual_numerical_eq_pressure}. Similarly, in the loss equations of PI-DeepONet (Equations \ref{eq:loss_displacement_eq} and \ref{eq:loss_pressure_eq}), a comparable effect is observed. From this observation, we can infer that the error in the pressure variable tends to be larger when \(E\) is a sizable value or \(K\) is a small value. This aligns with expectations when simulating with parameters reflecting real-world environmental conditions.
+
+In the Gauss-Seidel method, reducing the error necessitates lowering the threshold of the convergence criteria or increasing mesh refinement. However, this comes at the cost of exponentially higher processing times, potentially reaching a point where the method becomes impractical. On the other hand, in the case of PI-DeepONet, minimizing error involves extending the number of epochs during model training, thereby increasing the total processing time (training time + processing time). It is important to highlight, however, that the PI-DeepONet method is flexible after training, i.e.: it can be used to find different solutions, extrapolating for various inputs. Therefore, although the training time can be seen as computationally costly, the actual solving after training takes only about $30$ $milliseconds$.
+
+Refining the trained model through fine-tuning is an option to further enhance the accuracy of predictions with PI-DeepONet. However, as demonstrated, the fine-tuning did not yield a significant improvement, indicating a potential requirement for additional epochs. Given this, investing more epochs in the primary training phase before resorting to fine-tuning might be a more effective strategy, considering the potential trade-off between computational cost and the magnitude of improvement.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=1\textwidth]{real_results_comparison.png}
+    \caption{Comparison with real results - realistic case (real solution is on the left while the PI-DeepONet solution is on the right)}
+    \label{fig:Real result comparison E1K1}
+\end{figure}
+
+\section{Conclusion}
+
+In this research, we introduced an alternative approach for numerical methods by leveraging a novel type of neural network known as Physics-Informed Deep Operator Networks (PI-DeepONets). This method combines the principles of Physics-Informed Neural Networks, which incorporate the physical model into neural network training, and Deep Operator Networks, capable of approximating operators. Specifically, we applied the one-dimensional Biot's consolidation model to train the Deep Operator Networks, enabling them to approximate the operators transforming source terms \(U\) and \(P\) into displacement and pressure variables.
+
+Despite the rapid processing capabilities of PI-DeepONet in computing results, the training of PI-DeepONet required a significant amount of time. Upon observing the results, PI-DeepONet exhibited a slightly higher error in the displacement variable when compared with the Gauss-Seidel method in the tested mesh refinement scenarios. However, the error in the pressure variable was significantly smaller. Attempting to fine-tune the PI-DeepONet improved the results, but only slightly, emphasizing the need for a more extensively trained model before fine-tuning.
+
+There is a need for more in-depth investigations utilizing PI-DeepONets for tackling complex partial differential equation systems, such as the Biot's consolidation model. The challenges arising from time dependency and the order of magnitude of parameters multiplying the variables in this equation necessitate further exploration and optimization. Future research endeavors are warranted to harness the full potential of PI-DeepONets in addressing intricate and realistic scenarios within the realm of partial differential equations.
+
+\section{Acknowledgements}
+
+The authors thank UFPR and FUNPAR for the institutional support through PRPPG/UFPR funding under Research Call 04/2023.
+
+\section{Conflict of interest}
+
+The authors declare that they have no Conflict of interest.
+
+\bibliography{mybibfile}% common bib file
+%% if required, the content of .bbl file can be included here once bbl is generated
+%\input sn-article.bbl
+
+%% Default %%
+%\input sn-article.tex
+
+\end{document}
