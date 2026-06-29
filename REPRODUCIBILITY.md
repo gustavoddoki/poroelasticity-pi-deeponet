@@ -13,6 +13,12 @@ maintaining a corrected, testable implementation under `src/`.
 - Random PI-DeepONet collocation points evaluate source terms at the sampled
   time rather than at a fixed final time.
 - Percentage errors use a finite denominator near exact zeros.
+- The neural architecture is identified as a multi-input operator network
+  (MIONet), matching its four branch encoders and tensor-product reduction.
+- Neural training normalizes the large `U` input, uses multiple collocation
+  points per sampled function, and records deterministic validation metrics.
+- Training runs preserve configuration, metrics, best weights, and resumable
+  checkpoints; incompatible configurations cannot resume the same run.
 
 These changes correct implementation and transcription issues found while
 consolidating the two legacy repositories. The historical manuscript is left
@@ -54,3 +60,5 @@ python experiments/run_gauss_seidel.py --spatial-cells 32 --time-steps 64
 
 Neural results should only be reported as reproduced after training a new model
 and preserving its configuration, seed, checkpoint, logs, and evaluation data.
+The current training pipeline preserves all of those artifacts under its run
+directory. See `TRAINING.md` for the protocol.

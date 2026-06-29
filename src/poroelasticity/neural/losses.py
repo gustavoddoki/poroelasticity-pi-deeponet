@@ -1,31 +1,42 @@
-def compute_loss(config, model, branch_inputs, random_inputs, batch_size, real_solution):
-    """Compute physics-informed DeepONet losses for the Biot model."""
+def compute_loss(
+    config,
+    model,
+    branch_inputs,
+    random_inputs,
+    real_solution,
+    data_weight=0.0,
+    training=False,
+):
+    """Compute dimensionless physics, boundary, initial, and optional data losses."""
 
     import tensorflow as tf
 
-    source_u_branch = tf.convert_to_tensor(branch_inputs[0], dtype=tf.float64)
-    source_p_branch = tf.convert_to_tensor(branch_inputs[1], dtype=tf.float64)
-    initial_u_branch = tf.convert_to_tensor(branch_inputs[2], dtype=tf.float64)
-    initial_p_branch = tf.convert_to_tensor(branch_inputs[3], dtype=tf.float64)
-    x = tf.convert_to_tensor(random_inputs[0], dtype=tf.float64)
-    t = tf.convert_to_tensor(random_inputs[1], dtype=tf.float64)
+    dtype = tf.as_dtype(model.compute_dtype)
+    branch_inputs = [tf.convert_to_tensor(value, dtype=dtype) for value in branch_inputs]
+    random_inputs = [tf.convert_to_tensor(value, dtype=dtype) for value in random_inputs]
+    real_solution = [tf.convert_to_tensor(value, dtype=dtype) for value in real_solution]
+    source_u_branch, source_p_branch, initial_u_branch, initial_p_branch = branch_inputs
+    x, t, source_u, source_p, initial_u, initial_p = random_inputs
 
-    e = tf.cast(config.elastic_modulus, tf.float64)
-    k = tf.cast(config.hydraulic_conductivity, tf.float64)
+    e = tf.cast(config.elastic_modulus, dtype)
+    k = tf.cast(config.hydraulic_conductivity, dtype)
+    length = tf.cast(config.length, dtype)
+    epsilon = tf.cast(tf.keras.backend.epsilon(), dtype)
+
+    model_inputs = {
+        "branch_input_u0": initial_u_branch,
+        "branch_input_p0": initial_p_branch,
+        "branch_input_U": source_u_branch,
+        "branch_input_P": source_p_branch,
+    }
 
     with tf.GradientTape(persistent=True) as outer_tape:
         outer_tape.watch([x, t])
         with tf.GradientTape(persistent=True) as inner_tape:
             inner_tape.watch([x, t])
-            trunk_input = tf.concat([x, t], axis=-1)
             u, p = model(
-                {
-                    "branch_input_u0": initial_u_branch,
-                    "branch_input_p0": initial_p_branch,
-                    "branch_input_U": source_u_branch,
-                    "branch_input_P": source_p_branch,
-                    "trunk_input": trunk_input,
-                }
+                {**model_inputs, "trunk_input": tf.concat([x, t], axis=-1)},
+                training=training,
             )
         u_x = inner_tape.gradient(u, x)
         p_x = inner_tape.gradient(p, x)
@@ -34,64 +45,62 @@ def compute_loss(config, model, branch_inputs, random_inputs, batch_size, real_s
     u_xt = outer_tape.gradient(u_x, t)
     p_xx = outer_tape.gradient(p_x, x)
 
-    loss_displacement_equation = tf.reduce_mean(tf.square(-e * u_xx + p_x - random_inputs[2]))
-    loss_pressure_equation = tf.reduce_mean(tf.square(u_xt - k * p_xx - random_inputs[3]))
-    loss_equations = loss_displacement_equation / e**2 + loss_pressure_equation
+    residual_u = -e * u_xx + p_x - source_u
+    residual_p = u_xt - k * p_xx - source_p
+    scale_u = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(source_u))), 1.0))
+    scale_p = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(source_p))), 1.0))
+    loss_displacement_equation = tf.reduce_mean(tf.square(residual_u / scale_u))
+    loss_pressure_equation = tf.reduce_mean(tf.square(residual_p / scale_p))
 
-    epsilon = tf.cast(tf.keras.backend.epsilon(), tf.float64)
-    denominator_u = tf.maximum(tf.abs(real_solution[0]), epsilon)
-    denominator_p = tf.maximum(tf.abs(real_solution[1]), epsilon)
-    loss_u_real = tf.reduce_mean(tf.abs(u - real_solution[0]) / denominator_u)
-    loss_p_real = tf.reduce_mean(tf.abs(p - real_solution[1]) / denominator_p)
-
-    x_left = tf.zeros((batch_size, 1), dtype=tf.float64)
-    with tf.GradientTape(persistent=True) as tape:
-        tape.watch([x_left, t])
-        trunk_input = tf.concat([x_left, t], axis=-1)
+    sample_count = tf.shape(x)[0]
+    x_left = tf.zeros((sample_count, 1), dtype=dtype)
+    with tf.GradientTape() as tape:
+        tape.watch(x_left)
         u_left, p_left = model(
-            {
-                "branch_input_u0": initial_u_branch,
-                "branch_input_p0": initial_p_branch,
-                "branch_input_U": source_u_branch,
-                "branch_input_P": source_p_branch,
-                "trunk_input": trunk_input,
-            }
+            {**model_inputs, "trunk_input": tf.concat([x_left, t], axis=-1)},
+            training=training,
         )
     u_x_left = tape.gradient(u_left, x_left)
-    loss_left_boundary = tf.reduce_mean(tf.square(u_x_left)) + tf.reduce_mean(tf.square(p_left))
+    loss_left_boundary = tf.reduce_mean(tf.square(length * u_x_left)) + tf.reduce_mean(tf.square(p_left))
 
-    x_right = tf.fill((batch_size, 1), tf.cast(config.length, tf.float64))
-    with tf.GradientTape(persistent=True) as tape:
-        tape.watch([x_right, t])
-        trunk_input = tf.concat([x_right, t], axis=-1)
+    x_right = tf.fill((sample_count, 1), length)
+    with tf.GradientTape() as tape:
+        tape.watch(x_right)
         u_right, p_right = model(
-            {
-                "branch_input_u0": initial_u_branch,
-                "branch_input_p0": initial_p_branch,
-                "branch_input_U": source_u_branch,
-                "branch_input_P": source_p_branch,
-                "trunk_input": trunk_input,
-            }
+            {**model_inputs, "trunk_input": tf.concat([x_right, t], axis=-1)},
+            training=training,
         )
     p_x_right = tape.gradient(p_right, x_right)
-    loss_right_boundary = tf.reduce_mean(tf.square(u_right)) + tf.reduce_mean(tf.square(p_x_right))
+    loss_right_boundary = tf.reduce_mean(tf.square(u_right)) + tf.reduce_mean(tf.square(length * p_x_right))
 
-    t_initial = tf.zeros((batch_size, 1), dtype=tf.float64)
-    trunk_input = tf.concat([x, t_initial], axis=-1)
+    t_initial = tf.zeros((sample_count, 1), dtype=dtype)
     u_initial, p_initial = model(
-        {
-            "branch_input_u0": initial_u_branch,
-            "branch_input_p0": initial_p_branch,
-            "branch_input_U": source_u_branch,
-            "branch_input_P": source_p_branch,
-            "trunk_input": trunk_input,
-        }
+        {**model_inputs, "trunk_input": tf.concat([x, t_initial], axis=-1)},
+        training=training,
     )
-    loss_initial = tf.reduce_mean(tf.square(u_initial - random_inputs[4])) + tf.reduce_mean(tf.square(p_initial - random_inputs[5]))
-    loss_total = loss_equations + loss_left_boundary + loss_right_boundary + loss_initial
+    loss_initial = tf.reduce_mean(tf.square(u_initial - initial_u)) + tf.reduce_mean(tf.square(p_initial - initial_p))
 
-    return (
-        loss_total,
-        [loss_displacement_equation / e**2, loss_pressure_equation, loss_left_boundary, loss_right_boundary, loss_initial],
-        [loss_u_real, loss_p_real],
+    true_u, true_p = real_solution
+    scale_real_u = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(true_u))), epsilon))
+    scale_real_p = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(true_p))), epsilon))
+    loss_data = tf.reduce_mean(tf.square((u - true_u) / scale_real_u)) + tf.reduce_mean(
+        tf.square((p - true_p) / scale_real_p)
     )
+    relative_l2_u = tf.sqrt(tf.reduce_sum(tf.square(u - true_u))) / tf.maximum(
+        tf.sqrt(tf.reduce_sum(tf.square(true_u))), epsilon
+    )
+    relative_l2_p = tf.sqrt(tf.reduce_sum(tf.square(p - true_p))) / tf.maximum(
+        tf.sqrt(tf.reduce_sum(tf.square(true_p))), epsilon
+    )
+
+    loss_physics = loss_displacement_equation + loss_pressure_equation
+    loss_total = loss_physics + loss_left_boundary + loss_right_boundary + loss_initial + data_weight * loss_data
+    components = [
+        loss_displacement_equation,
+        loss_pressure_equation,
+        loss_left_boundary,
+        loss_right_boundary,
+        loss_initial,
+        loss_data,
+    ]
+    return loss_total, components, [relative_l2_u, relative_l2_p]

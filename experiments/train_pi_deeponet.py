@@ -1,4 +1,8 @@
 import argparse
+import csv
+import json
+import time
+from pathlib import Path
 
 import numpy as np
 
@@ -8,50 +12,218 @@ from poroelasticity.neural.model import create_model
 from poroelasticity.neural.sampling import create_sample
 
 
-def train_step(config, model, optimizer, branch_inputs, random_inputs, batch_size, real_solution):
-    import tensorflow as tf
-
-    with tf.GradientTape() as tape:
-        loss_total, loss_components, real_errors = compute_loss(
-            config, model, branch_inputs, random_inputs, batch_size, real_solution
-        )
-    gradients = tape.gradient(loss_total, model.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-    return loss_total, loss_components, real_errors
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Train the PI-DeepONet model for the Biot consolidation problem.")
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train the physics-informed MIONet for Biot consolidation.")
     parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--num-functions", type=int, default=8)
+    parser.add_argument("--points-per-function", type=int, default=4)
+    parser.add_argument("--validation-functions", type=int, default=8)
+    parser.add_argument("--validation-points", type=int, default=8)
     parser.add_argument("--size-x", type=int, default=51)
     parser.add_argument("--size-t", type=int, default=101)
     parser.add_argument("--neurons", type=int, default=128)
+    parser.add_argument("--hidden-layers", type=int, default=5)
     parser.add_argument("--learning-rate", type=float, default=1e-5)
-    args = parser.parse_args()
+    parser.add_argument("--clip-norm", type=float, default=1.0)
+    parser.add_argument("--data-weight", type=float, default=0.0)
+    parser.add_argument("--elastic-modulus", type=float, default=1.0)
+    parser.add_argument("--hydraulic-conductivity", type=float, default=1.0)
+    parser.add_argument("--length", type=float, default=0.5)
+    parser.add_argument("--final-time", type=float, default=1.0)
+    parser.add_argument("--dtype", choices=("float32", "float64"), default="float32")
+    parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--output-dir", type=Path, default=Path("runs/pi_mionet"))
+    parser.add_argument("--checkpoint-every", type=int, default=100)
+    parser.add_argument("--validate-every", type=int, default=10)
+    parser.add_argument("--log-every", type=int, default=1)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--deterministic", action="store_true")
+    return parser.parse_args()
+
+
+def append_metrics(path: Path, row):
+    fieldnames = list(row)
+    write_header = not path.exists()
+    with path.open("a", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def validate_resume_configuration(saved, current):
+    immutable_keys = (
+        "num_functions",
+        "points_per_function",
+        "validation_functions",
+        "validation_points",
+        "size_x",
+        "size_t",
+        "neurons",
+        "hidden_layers",
+        "learning_rate",
+        "clip_norm",
+        "data_weight",
+        "elastic_modulus",
+        "hydraulic_conductivity",
+        "length",
+        "final_time",
+        "dtype",
+        "seed",
+    )
+    mismatches = [key for key in immutable_keys if saved.get(key) != current.get(key)]
+    if mismatches:
+        details = ", ".join(f"{key}: {saved.get(key)!r} != {current.get(key)!r}" for key in mismatches)
+        raise ValueError(f"resume configuration does not match the saved run: {details}")
+
+
+def main():
+    args = parse_args()
 
     import tensorflow as tf
 
-    tf.keras.backend.set_floatx("float64")
-    config = BiotConfig()
-    x_domain = np.linspace(0.0, config.length, num=args.size_x, dtype=np.float64)
-    t_domain = np.linspace(0.0, config.final_time, num=args.size_t, dtype=np.float64).reshape((args.size_t, 1))
+    tf.keras.backend.set_floatx(args.dtype)
+    tf.keras.utils.set_random_seed(args.seed)
+    if args.deterministic:
+        tf.config.experimental.enable_op_determinism()
+
+    config = BiotConfig(
+        length=args.length,
+        final_time=args.final_time,
+        elastic_modulus=args.elastic_modulus,
+        hydraulic_conductivity=args.hydraulic_conductivity,
+    )
+    np_dtype = np.float32 if args.dtype == "float32" else np.float64
+    x_domain = np.linspace(0.0, config.length, num=args.size_x, dtype=np_dtype)
+    t_domain = np.linspace(0.0, config.final_time, num=args.size_t, dtype=np_dtype).reshape((args.size_t, 1))
     x_grid = np.tile(x_domain, (args.size_t, 1))
 
-    model = create_model(args.size_x, args.size_t, args.neurons)
-    optimizer = tf.keras.optimizers.Adam(args.learning_rate)
+    configuration = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
+    configuration["tensorflow_version"] = tf.__version__
+    configuration["gpu_devices"] = [device.name for device in tf.config.list_physical_devices("GPU")]
+    config_path = args.output_dir / "config.json"
+    if args.resume:
+        if not config_path.exists():
+            raise FileNotFoundError(f"no saved configuration found under {args.output_dir}")
+        saved_configuration = json.loads(config_path.read_text(encoding="utf-8"))
+        validate_resume_configuration(saved_configuration, configuration)
+    elif config_path.exists() or (args.output_dir / "metrics.csv").exists():
+        raise FileExistsError(f"run directory already contains results: {args.output_dir}; use --resume")
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    if not args.resume:
+        config_path.write_text(json.dumps(configuration, indent=2), encoding="utf-8")
 
-    for epoch in range(1, args.epochs + 1):
-        branch_inputs, random_inputs, real_solution = create_sample(
-            config, args.size_x, args.size_t, args.batch_size, x_grid, t_domain
-        )
-        loss_total, _, real_errors = train_step(
-            config, model, optimizer, branch_inputs, random_inputs, args.batch_size, real_solution
-        )
-        print(
-            f"epoch={epoch} loss={float(loss_total):.6e} "
-            f"mape_u={float(real_errors[0]) * 100:.4f}% mape_p={float(real_errors[1]) * 100:.4f}%"
-        )
+    model = create_model(
+        config,
+        args.size_x,
+        args.size_t,
+        args.neurons,
+        hidden_layers=args.hidden_layers,
+    )
+    optimizer = tf.keras.optimizers.Adam(args.learning_rate)
+    checkpoint = tf.train.Checkpoint(
+        epoch=tf.Variable(0, dtype=tf.int64),
+        best_validation=tf.Variable(float("inf"), dtype=tf.float32),
+        optimizer=optimizer,
+        model=model,
+    )
+    manager = tf.train.CheckpointManager(checkpoint, str(args.output_dir / "checkpoints"), max_to_keep=3)
+    if args.resume:
+        if not manager.latest_checkpoint:
+            raise FileNotFoundError(f"no checkpoint found under {args.output_dir}")
+        checkpoint.restore(manager.latest_checkpoint).expect_partial()
+        print(f"restored={manager.latest_checkpoint} epoch={int(checkpoint.epoch.numpy())}")
+
+    validation_batch = create_sample(
+        config,
+        args.size_x,
+        args.size_t,
+        args.validation_functions,
+        args.validation_points,
+        x_grid,
+        t_domain,
+        rng=np.random.default_rng(args.seed + 1_000_000),
+        dtype=np_dtype,
+    )
+
+    @tf.function(reduce_retracing=True)
+    def train_step(branch_inputs, random_inputs, real_solution):
+        with tf.GradientTape() as tape:
+            loss_total, loss_components, relative_errors = compute_loss(
+                config,
+                model,
+                branch_inputs,
+                random_inputs,
+                real_solution,
+                data_weight=args.data_weight,
+                training=True,
+            )
+        gradients = tape.gradient(loss_total, model.trainable_variables)
+        gradients, gradient_norm = tf.clip_by_global_norm(gradients, args.clip_norm)
+        tf.debugging.check_numerics(loss_total, "non-finite training loss")
+        optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        return loss_total, loss_components, relative_errors, gradient_norm
+
+    start_epoch = int(checkpoint.epoch.numpy()) + 1
+    started = time.perf_counter()
+    try:
+        for epoch in range(start_epoch, args.epochs + 1):
+            training_batch = create_sample(
+                config,
+                args.size_x,
+                args.size_t,
+                args.num_functions,
+                args.points_per_function,
+                x_grid,
+                t_domain,
+                rng=np.random.default_rng(args.seed + epoch),
+                dtype=np_dtype,
+            )
+            loss_total, components, relative_errors, gradient_norm = train_step(*training_batch)
+            checkpoint.epoch.assign(epoch)
+
+            validation_loss = None
+            validation_errors = None
+            if epoch % args.validate_every == 0 or epoch == args.epochs:
+                validation_loss, _, validation_errors = compute_loss(
+                    config,
+                    model,
+                    *validation_batch,
+                    data_weight=args.data_weight,
+                )
+                if validation_loss < tf.cast(checkpoint.best_validation, validation_loss.dtype):
+                    checkpoint.best_validation.assign(tf.cast(validation_loss, tf.float32))
+                    model.save_weights(args.output_dir / "best.weights.h5")
+
+            if epoch % args.log_every == 0 or epoch == args.epochs:
+                row = {
+                    "epoch": epoch,
+                    "elapsed_seconds": time.perf_counter() - started,
+                    "loss": float(loss_total),
+                    "loss_pde_u": float(components[0]),
+                    "loss_pde_p": float(components[1]),
+                    "loss_boundary_left": float(components[2]),
+                    "loss_boundary_right": float(components[3]),
+                    "loss_initial": float(components[4]),
+                    "loss_data": float(components[5]),
+                    "relative_l2_u": float(relative_errors[0]),
+                    "relative_l2_p": float(relative_errors[1]),
+                    "gradient_norm": float(gradient_norm),
+                    "validation_loss": "" if validation_loss is None else float(validation_loss),
+                    "validation_relative_l2_u": "" if validation_errors is None else float(validation_errors[0]),
+                    "validation_relative_l2_p": "" if validation_errors is None else float(validation_errors[1]),
+                }
+                append_metrics(args.output_dir / "metrics.csv", row)
+                print(
+                    f"epoch={epoch} loss={float(loss_total):.6e} "
+                    f"rel_l2_u={float(relative_errors[0]):.4f} "
+                    f"rel_l2_p={float(relative_errors[1]):.4f}"
+                )
+
+            if epoch % args.checkpoint_every == 0:
+                manager.save(checkpoint_number=epoch)
+    finally:
+        manager.save(checkpoint_number=int(checkpoint.epoch.numpy()))
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
-# PI-DeepONets for One-Dimensional Biot Consolidation
+# PI-MIONet for One-Dimensional Biot Consolidation
 
-This repository contains the code and manuscript assets for a research project on
-solving the one-dimensional Biot consolidation model with Physics-Informed Deep
-Operator Networks (PI-DeepONets), benchmarked against a classical Gauss-Seidel
-finite-volume solver.
+This repository contains a corrected and reproducible research implementation
+for solving the one-dimensional Biot consolidation model with a
+physics-informed multi-input operator network (PI-MIONet), historically
+described in the thesis as a PI-DeepONet. A finite-volume Gauss-Seidel solver is
+included as the classical baseline.
 
 Biot consolidation describes the coupled interaction between deformation and
 fluid pressure in porous media. The model studied here is a stiff coupled PDE
@@ -13,39 +14,36 @@ system with displacement `u(x, t)` and pressure `p(x, t)`.
 
 Classical numerical methods can solve the model accurately, but repeated
 simulations become expensive when the mesh is refined or when source terms and
-initial conditions vary. PI-DeepONets offer a different tradeoff: a costly
-training phase followed by very fast inference for new inputs.
+initial conditions vary. Physics-informed operator networks use a costly
+training phase to enable fast inference for new inputs.
 
-The original thesis experiments compare:
+The project combines:
 
 - a finite-volume Gauss-Seidel solver with implicit Euler time stepping;
-- a PI-DeepONet architecture that learns solution operators for displacement
-  and pressure;
-- manufactured analytical solutions used to evaluate error and stability.
+- a PI-MIONet with branches for `U`, `P`, `u0`, and `p0`;
+- manufactured analytical solutions for physics and accuracy validation;
+- deterministic sampling, validation, checkpoints, and resumed neural runs;
+- the original manuscript and selected result figures.
 
 ## Repository Layout
 
 ```text
-.
-├── experiments/
-│   ├── run_gauss_seidel.py
-│   └── train_pi_deeponet.py
-├── paper/
-│   ├── manuscript.tex
-│   └── figures/
-├── results/
-│   └── figures/
-├── src/
-│   └── poroelasticity/
-│       ├── analytical.py
-│       ├── numerical/
-│       │   └── gauss_seidel.py
-│       └── neural/
-│           ├── losses.py
-│           ├── model.py
-│           └── sampling.py
-├── tests/
-└── pyproject.toml
+|-- experiments/
+|   |-- run_gauss_seidel.py
+|   `-- train_pi_deeponet.py
+|-- paper/
+|   |-- manuscript.tex
+|   `-- figures/
+|-- results/
+|   `-- figures/
+|-- src/poroelasticity/
+|   |-- analytical.py
+|   |-- numerical/
+|   `-- neural/
+|-- tests/
+|-- REPRODUCIBILITY.md
+|-- TRAINING.md
+`-- pyproject.toml
 ```
 
 ## Mathematical Model
@@ -65,34 +63,30 @@ where `E` is the elastic modulus, `K` is the hydraulic conductivity, `U` is the
 body-force density source term, and `P` is the fluid injection/extraction source
 term.
 
-## Highlights From the Thesis Experiments
+## Result Status
 
-- The PI-DeepONet is trained with physics-informed losses derived from the PDE
-  residuals, boundary conditions, and initial conditions.
-- The Gauss-Seidel solver is used as the classical numerical baseline.
-- After training, PI-DeepONet inference took approximately 30 ms in the thesis
-  experiments.
-- Under realistic parameter scaling, the neural method substantially reduced
-  pressure error compared with the tested Gauss-Seidel refinements, while the
-  classical solver remained stronger for displacement accuracy.
+The thesis reported approximately 30 ms of neural inference after training and
+compared the neural model with highly refined Gauss-Seidel runs. Those numbers
+are historical results, not fresh reproductions: the original checkpoints,
+complete logs, seeds, and sampled parameter sets were not preserved.
 
-These are historical thesis results, not fresh reproductions. See
-[`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for the corrections applied during
-repository consolidation and the evidence required for a new reproduced run.
+See [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md) for corrected numerical results
+and [`TRAINING.md`](TRAINING.md) for the neural experiment protocol and its
+scientific limitations.
 
 ## Selected Figures
 
-PI-DeepONet training flow:
+PI-MIONet training flow:
 
-![PI-DeepONet flowchart](results/figures/pi_deeponet_flowchart.png)
+![PI-MIONet flowchart](results/figures/pi_deeponet_flowchart.png)
 
-DeepONet architecture for the Biot model:
+Multi-input operator architecture for the Biot model:
 
-![DeepONet architecture](results/figures/deeponet_biot_architecture.png)
+![MIONet architecture](results/figures/deeponet_biot_architecture.png)
 
-Comparison between analytical and PI-DeepONet results:
+Historical comparison with the analytical solution:
 
-![Realistic-case comparison](results/figures/real_results_comparison.png)
+![Historical realistic-case comparison](results/figures/real_results_comparison.png)
 
 ## Quick Start
 
@@ -112,34 +106,33 @@ python -m venv .venv
 pip install -e ".[dev,neural]"
 ```
 
-Run the numerical baseline:
+Run the tests and numerical baseline:
 
 ```bash
-python experiments/run_gauss_seidel.py
+pytest
+python experiments/run_gauss_seidel.py --spatial-cells 32 --time-steps 64
 ```
 
-Use larger meshes for thesis-style experiments:
+Run a short neural smoke test:
 
 ```bash
-python experiments/run_gauss_seidel.py --spatial-cells 128 --time-steps 256
+python experiments/train_pi_deeponet.py \
+  --epochs 10 \
+  --num-functions 4 \
+  --points-per-function 4 \
+  --output-dir runs/smoke
 ```
 
-Run a short PI-DeepONet training smoke test:
+The original thesis used 100,000 epochs. Long runs should only start after the
+smoke test has produced finite losses, checkpoints, and validation metrics.
 
-```bash
-python experiments/train_pi_deeponet.py --epochs 10 --batch-size 16
-```
+## Origin
 
-The original thesis used much longer training schedules, including 100,000
-epochs for the main experiments.
-
-## Notes
-
-This repository is a curated version of two earlier project repositories:
+This repository consolidates two earlier projects:
 
 - `Poroelasticity-NumericalMethods`
 - `Poroelasticity-DeepLearning`
 
-The goal of this version is to present the work as a single reproducible
-research-engineering project: model, baseline, neural solver, evaluation assets,
-and manuscript in one place.
+The consolidated version presents the model, numerical baseline, neural
+operator, evaluation assets, tests, and manuscript as one research-engineering
+project.

@@ -1,70 +1,93 @@
-import random
-
 import numpy as np
 
-from poroelasticity.analytical import BiotConfig, ManufacturedParameters, analytical_solution, initial_conditions, source_terms
+from poroelasticity.analytical import (
+    BiotConfig,
+    ManufacturedParameters,
+    analytical_solution,
+    initial_conditions,
+    source_terms,
+)
 
 
-def random_manufactured_parameters() -> ManufacturedParameters:
+def random_manufactured_parameters(rng: np.random.Generator) -> ManufacturedParameters:
     return ManufacturedParameters(
-        displacement_amplitude=random.uniform(0.5, 3.0),
-        pressure_amplitude=random.uniform(0.5, 3.0),
-        displacement_decay=random.uniform(0.5, 2.0),
-        pressure_decay=random.uniform(0.5, 2.0),
-        displacement_shift=random.uniform(-2.0, 0.0),
-        pressure_shift=random.uniform(-2.0, 0.0),
+        displacement_amplitude=rng.uniform(0.5, 3.0),
+        pressure_amplitude=rng.uniform(0.5, 3.0),
+        displacement_decay=rng.uniform(0.5, 2.0),
+        pressure_decay=rng.uniform(0.5, 2.0),
+        displacement_shift=rng.uniform(-2.0, 0.0),
+        pressure_shift=rng.uniform(-2.0, 0.0),
     )
 
 
-def create_sample(config: BiotConfig, size_x: int, size_t: int, batch_size: int, x_grid, t_grid):
-    """Create one PI-DeepONet training batch."""
+def create_sample(
+    config: BiotConfig,
+    size_x: int,
+    size_t: int,
+    num_functions: int,
+    points_per_function: int,
+    x_grid,
+    t_grid,
+    rng: np.random.Generator | None = None,
+    dtype=np.float32,
+):
+    """Create a reproducible MIONet batch with several points per function."""
 
-    u_branch = []
-    p_branch = []
-    u0_branch = []
-    p0_branch = []
-    x_random = []
-    t_random = []
-    source_u_random = []
-    source_p_random = []
-    u0_random = []
-    p0_random = []
-    u_real = []
-    p_real = []
+    if num_functions < 1 or points_per_function < 1:
+        raise ValueError("num_functions and points_per_function must be positive")
 
-    for _ in range(batch_size):
-        params = random_manufactured_parameters()
+    rng = rng or np.random.default_rng()
+    dtype = np.dtype(dtype)
+    sample_count = num_functions * points_per_function
+    source_sensor_count = size_x * size_t
+
+    source_u_branch = np.empty((sample_count, source_sensor_count), dtype=dtype)
+    source_p_branch = np.empty((sample_count, source_sensor_count), dtype=dtype)
+    initial_u_branch = np.empty((sample_count, size_x), dtype=dtype)
+    initial_p_branch = np.empty((sample_count, size_x), dtype=dtype)
+    x_random = np.empty((sample_count, 1), dtype=dtype)
+    t_random = np.empty((sample_count, 1), dtype=dtype)
+    source_u_random = np.empty((sample_count, 1), dtype=dtype)
+    source_p_random = np.empty((sample_count, 1), dtype=dtype)
+    initial_u_random = np.empty((sample_count, 1), dtype=dtype)
+    initial_p_random = np.empty((sample_count, 1), dtype=dtype)
+    real_u = np.empty((sample_count, 1), dtype=dtype)
+    real_p = np.empty((sample_count, 1), dtype=dtype)
+
+    for function_index in range(num_functions):
+        params = random_manufactured_parameters(rng)
         source_u, source_p = source_terms(config, x_grid, t_grid, params)
-        initial_u, initial_p = initial_conditions(config, x_grid[0], params)
+        initial_u, initial_p = initial_conditions(config, np.asarray(x_grid)[0], params)
+        start = function_index * points_per_function
+        stop = start + points_per_function
 
-        u_branch.append(source_u.reshape(size_x * size_t))
-        p_branch.append(source_p.reshape(size_x * size_t))
-        u0_branch.append(initial_u)
-        p0_branch.append(initial_p)
+        source_u_branch[start:stop] = np.asarray(source_u).reshape(source_sensor_count)
+        source_p_branch[start:stop] = np.asarray(source_p).reshape(source_sensor_count)
+        initial_u_branch[start:stop] = initial_u
+        initial_p_branch[start:stop] = initial_p
 
-        x_value = random.uniform(0.0, config.length)
-        t_value = random.uniform(0.0, config.final_time)
-        source_u_value, source_p_value = source_terms(config, x_value, t_value, params)
-        initial_u_value, initial_p_value = initial_conditions(config, x_value, params)
-        real_u_value, real_p_value = analytical_solution(config, x_value, t_value, params)
+        x_values = rng.uniform(0.0, config.length, size=points_per_function)
+        t_values = rng.uniform(0.0, config.final_time, size=points_per_function)
+        source_u_values, source_p_values = source_terms(config, x_values, t_values, params)
+        initial_u_values, initial_p_values = initial_conditions(config, x_values, params)
+        real_u_values, real_p_values = analytical_solution(config, x_values, t_values, params)
 
-        x_random.append([x_value])
-        t_random.append([t_value])
-        source_u_random.append([source_u_value])
-        source_p_random.append([source_p_value])
-        u0_random.append([initial_u_value])
-        p0_random.append([initial_p_value])
-        u_real.append([real_u_value])
-        p_real.append([real_p_value])
+        x_random[start:stop, 0] = x_values
+        t_random[start:stop, 0] = t_values
+        source_u_random[start:stop, 0] = source_u_values
+        source_p_random[start:stop, 0] = source_p_values
+        initial_u_random[start:stop, 0] = initial_u_values
+        initial_p_random[start:stop, 0] = initial_p_values
+        real_u[start:stop, 0] = real_u_values
+        real_p[start:stop, 0] = real_p_values
 
-    branch_inputs = [np.array(u_branch), np.array(p_branch), np.array(u0_branch), np.array(p0_branch)]
+    branch_inputs = [source_u_branch, source_p_branch, initial_u_branch, initial_p_branch]
     random_inputs = [
-        np.array(x_random),
-        np.array(t_random),
-        np.array(source_u_random),
-        np.array(source_p_random),
-        np.array(u0_random),
-        np.array(p0_random),
+        x_random,
+        t_random,
+        source_u_random,
+        source_p_random,
+        initial_u_random,
+        initial_p_random,
     ]
-    real_solution = [np.array(u_real), np.array(p_real)]
-    return branch_inputs, random_inputs, real_solution
+    return branch_inputs, random_inputs, [real_u, real_p]

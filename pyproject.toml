@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "poroelasticity-pi-deeponet"
 version = "0.1.0"
-description = "PI-DeepONet and Gauss-Seidel solvers for the one-dimensional Biot consolidation model."
+description = "Physics-informed MIONet and Gauss-Seidel solvers for one-dimensional Biot consolidation."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "numpy>=1.24",
+  "numpy>=1.26,<2.0",
   "pandas>=2.0",
 ]
 
@@ -18,7 +18,7 @@ dev = [
   "pytest>=8.0",
 ]
 neural = [
-  "tensorflow>=2.12",
+  "tensorflow>=2.16,<2.22",
 ]
 
 [tool.setuptools.packages.find]
