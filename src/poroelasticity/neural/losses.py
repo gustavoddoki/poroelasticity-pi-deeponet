@@ -5,6 +5,8 @@ def compute_loss(
     random_inputs,
     real_solution,
     data_weight=0.0,
+    displacement_data_weight=None,
+    pressure_data_weight=None,
     training=False,
 ):
     """Compute dimensionless physics, boundary, initial, and optional data losses."""
@@ -15,6 +17,10 @@ def compute_loss(
     branch_inputs = [tf.convert_to_tensor(value, dtype=dtype) for value in branch_inputs]
     random_inputs = [tf.convert_to_tensor(value, dtype=dtype) for value in random_inputs]
     real_solution = [tf.convert_to_tensor(value, dtype=dtype) for value in real_solution]
+    if displacement_data_weight is None:
+        displacement_data_weight = data_weight
+    if pressure_data_weight is None:
+        pressure_data_weight = data_weight
     source_u_branch, source_p_branch, initial_u_branch, initial_p_branch = branch_inputs
     x, t, source_u, source_p, initial_u, initial_p = random_inputs
 
@@ -83,9 +89,9 @@ def compute_loss(
     true_u, true_p = real_solution
     scale_real_u = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(true_u))), epsilon))
     scale_real_p = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(true_p))), epsilon))
-    loss_data = tf.reduce_mean(tf.square((u - true_u) / scale_real_u)) + tf.reduce_mean(
-        tf.square((p - true_p) / scale_real_p)
-    )
+    loss_data_u = tf.reduce_mean(tf.square((u - true_u) / scale_real_u))
+    loss_data_p = tf.reduce_mean(tf.square((p - true_p) / scale_real_p))
+    loss_data = loss_data_u + loss_data_p
     relative_l2_u = tf.sqrt(tf.reduce_sum(tf.square(u - true_u))) / tf.maximum(
         tf.sqrt(tf.reduce_sum(tf.square(true_u))), epsilon
     )
@@ -94,7 +100,14 @@ def compute_loss(
     )
 
     loss_physics = loss_displacement_equation + loss_pressure_equation
-    loss_total = loss_physics + loss_left_boundary + loss_right_boundary + loss_initial + data_weight * loss_data
+    loss_total = (
+        loss_physics
+        + loss_left_boundary
+        + loss_right_boundary
+        + loss_initial
+        + tf.cast(displacement_data_weight, dtype) * loss_data_u
+        + tf.cast(pressure_data_weight, dtype) * loss_data_p
+    )
     components = [
         loss_displacement_equation,
         loss_pressure_equation,
@@ -102,5 +115,7 @@ def compute_loss(
         loss_right_boundary,
         loss_initial,
         loss_data,
+        loss_data_u,
+        loss_data_p,
     ]
     return loss_total, components, [relative_l2_u, relative_l2_p]

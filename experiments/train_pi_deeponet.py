@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import time
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -17,15 +18,17 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--num-functions", type=int, default=8)
     parser.add_argument("--points-per-function", type=int, default=4)
-    parser.add_argument("--validation-functions", type=int, default=8)
-    parser.add_argument("--validation-points", type=int, default=8)
+    parser.add_argument("--validation-functions", type=int, default=16)
+    parser.add_argument("--validation-points", type=int, default=64)
     parser.add_argument("--size-x", type=int, default=51)
     parser.add_argument("--size-t", type=int, default=101)
     parser.add_argument("--neurons", type=int, default=128)
     parser.add_argument("--hidden-layers", type=int, default=5)
     parser.add_argument("--learning-rate", type=float, default=1e-5)
     parser.add_argument("--clip-norm", type=float, default=1.0)
-    parser.add_argument("--data-weight", type=float, default=0.0)
+    parser.add_argument("--data-weight", type=float, default=0.0, help="Legacy shared weight for both data losses.")
+    parser.add_argument("--displacement-data-weight", type=float, default=None)
+    parser.add_argument("--pressure-data-weight", type=float, default=None)
     parser.add_argument("--elastic-modulus", type=float, default=1.0)
     parser.add_argument("--hydraulic-conductivity", type=float, default=1.0)
     parser.add_argument("--length", type=float, default=0.5)
@@ -34,8 +37,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--output-dir", type=Path, default=Path("runs/pi_mionet"))
     parser.add_argument("--checkpoint-every", type=int, default=100)
-    parser.add_argument("--validate-every", type=int, default=10)
-    parser.add_argument("--log-every", type=int, default=1)
+    parser.add_argument("--validate-every", type=int, default=100)
+    parser.add_argument("--log-every", type=int, default=10)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--deterministic", action="store_true")
     return parser.parse_args()
@@ -64,6 +67,8 @@ def validate_resume_configuration(saved, current):
         "learning_rate",
         "clip_norm",
         "data_weight",
+        "displacement_data_weight",
+        "pressure_data_weight",
         "elastic_modulus",
         "hydraulic_conductivity",
         "length",
@@ -81,6 +86,13 @@ def main():
     args = parse_args()
 
     import tensorflow as tf
+
+    if args.displacement_data_weight is None:
+        args.displacement_data_weight = args.data_weight
+    if args.pressure_data_weight is None:
+        args.pressure_data_weight = args.data_weight
+    if min(args.displacement_data_weight, args.pressure_data_weight) < 0:
+        raise ValueError("data weights must be non-negative")
 
     tf.keras.backend.set_floatx(args.dtype)
     tf.keras.utils.set_random_seed(args.seed)
@@ -124,6 +136,7 @@ def main():
     checkpoint = tf.train.Checkpoint(
         epoch=tf.Variable(0, dtype=tf.int64),
         best_validation=tf.Variable(float("inf"), dtype=tf.float32),
+        best_validation_score=tf.Variable(float("inf"), dtype=tf.float32),
         optimizer=optimizer,
         model=model,
     )
@@ -145,6 +158,24 @@ def main():
         rng=np.random.default_rng(args.seed + 1_000_000),
         dtype=np_dtype,
     )
+    validation_initial_u = validation_batch[0][2]
+    validation_initial_p = validation_batch[0][3]
+    displacement_scale = max(float(np.sqrt(np.mean(validation_initial_u**2))), np.finfo(float).tiny)
+    pressure_scale = max(float(np.sqrt(np.mean(validation_initial_p**2))), np.finfo(float).tiny)
+    mechanics_scale = max(abs(config.elastic_modulus) * displacement_scale, np.finfo(float).tiny)
+    pressure_mechanics_ratio = pressure_scale * config.length / mechanics_scale
+    pressure_flow_ratio = (
+        abs(config.hydraulic_conductivity)
+        * pressure_scale
+        * config.final_time
+        / (displacement_scale * config.length)
+    )
+    if args.pressure_data_weight == 0 and max(pressure_mechanics_ratio, pressure_flow_ratio) < 1e-3:
+        warnings.warn(
+            "pressure is weakly identifiable from the physics residuals at these scales; "
+            "use a dimensionless configuration or explicitly report --pressure-data-weight for a hybrid experiment",
+            stacklevel=2,
+        )
 
     @tf.function(reduce_retracing=True)
     def train_step(branch_inputs, random_inputs, real_solution):
@@ -156,6 +187,8 @@ def main():
                 random_inputs,
                 real_solution,
                 data_weight=args.data_weight,
+                displacement_data_weight=args.displacement_data_weight,
+                pressure_data_weight=args.pressure_data_weight,
                 training=True,
             )
         gradients = tape.gradient(loss_total, model.trainable_variables)
@@ -184,18 +217,25 @@ def main():
 
             validation_loss = None
             validation_errors = None
+            validation_score = None
             if epoch % args.validate_every == 0 or epoch == args.epochs:
                 validation_loss, _, validation_errors = compute_loss(
                     config,
                     model,
                     *validation_batch,
                     data_weight=args.data_weight,
+                    displacement_data_weight=args.displacement_data_weight,
+                    pressure_data_weight=args.pressure_data_weight,
                 )
                 if validation_loss < tf.cast(checkpoint.best_validation, validation_loss.dtype):
                     checkpoint.best_validation.assign(tf.cast(validation_loss, tf.float32))
+                    model.save_weights(args.output_dir / "best.objective.weights.h5")
+                validation_score = 0.5 * (validation_errors[0] + validation_errors[1])
+                if validation_score < tf.cast(checkpoint.best_validation_score, validation_score.dtype):
+                    checkpoint.best_validation_score.assign(tf.cast(validation_score, tf.float32))
                     model.save_weights(args.output_dir / "best.weights.h5")
 
-            if epoch % args.log_every == 0 or epoch == args.epochs:
+            if epoch % args.log_every == 0 or validation_loss is not None or epoch == args.epochs:
                 row = {
                     "epoch": epoch,
                     "elapsed_seconds": time.perf_counter() - started,
@@ -206,10 +246,13 @@ def main():
                     "loss_boundary_right": float(components[3]),
                     "loss_initial": float(components[4]),
                     "loss_data": float(components[5]),
+                    "loss_data_u": float(components[6]),
+                    "loss_data_p": float(components[7]),
                     "relative_l2_u": float(relative_errors[0]),
                     "relative_l2_p": float(relative_errors[1]),
                     "gradient_norm": float(gradient_norm),
                     "validation_loss": "" if validation_loss is None else float(validation_loss),
+                    "validation_score": "" if validation_score is None else float(validation_score),
                     "validation_relative_l2_u": "" if validation_errors is None else float(validation_errors[0]),
                     "validation_relative_l2_p": "" if validation_errors is None else float(validation_errors[1]),
                 }

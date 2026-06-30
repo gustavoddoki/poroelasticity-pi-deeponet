@@ -19,6 +19,10 @@ maintaining a corrected, testable implementation under `src/`.
   points per sampled function, and records deterministic validation metrics.
 - Training runs preserve configuration, metrics, best weights, and resumable
   checkpoints; incompatible configurations cannot resume the same run.
+- Displacement and pressure supervision weights are independent and recorded,
+  so a hybrid experiment cannot be mistaken for a physics-only run.
+- Accuracy-selected and physics-loss-selected weights are stored separately to
+  expose objective/solution disagreement.
 
 These changes correct implementation and transcription issues found while
 consolidating the two legacy repositories. The historical manuscript is left
@@ -57,6 +61,14 @@ For a numerical experiment with explicit mesh settings:
 ```bash
 python experiments/run_gauss_seidel.py --spatial-cells 32 --time-steps 64
 ```
+
+A fresh pure-physics T4 run with `E=1e8`, `K=1e-5`, and `float32` completed
+100,000 epochs in approximately 2.14 hours. Its best validation physics loss
+was `3.93e-4`, but the corresponding pressure relative L2 error was `71.15%`.
+The displacement error was `0.81%`. This result is preserved as evidence that
+the dimensional manufactured problem is weakly identifiable for pressure under
+the unassisted physics objective; it is not reported as a successful coupled
+solution.
 
 Neural results should only be reported as reproduced after training a new model
 and preserving its configuration, seed, checkpoint, logs, and evaluation data.
