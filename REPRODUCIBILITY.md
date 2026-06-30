@@ -23,11 +23,12 @@ maintaining a corrected, testable implementation under `src/`.
   so a hybrid experiment cannot be mistaken for a physics-only run.
 - Accuracy-selected and objective-selected weights are stored separately to
   expose objective/solution disagreement.
-- Pressure-residual preconditioning removes the small `K` factor from the
-  pressure-head gradient while preserving the original mass-balance residual.
-- Displacement and pressure gradient groups are clipped and logged separately,
-  preventing one field from suppressing the other's update through global
-  clipping.
+- Displacement and pressure heads use independent Adam states, gradient
+  clipping, and configurable block-coordinate update counts after a joint
+  warmup.
+- The failed pressure-residual preconditioner that divided by `K` was removed;
+  it amplified early displacement error and drove the pressure solution away
+  from the manufactured reference.
 
 These changes correct implementation and transcription issues found while
 consolidating the two legacy repositories. The historical manuscript is left

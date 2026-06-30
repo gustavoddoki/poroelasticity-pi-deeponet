@@ -7,10 +7,9 @@ def compute_loss(
     data_weight=0.0,
     displacement_data_weight=None,
     pressure_data_weight=None,
-    pressure_precondition_weight=0.0,
     training=False,
 ):
-    """Compute physical, preconditioned, boundary, initial, and data losses."""
+    """Compute physics, boundary, initial, and optional data losses."""
 
     import tensorflow as tf
 
@@ -58,18 +57,6 @@ def compute_loss(
     scale_p = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(source_p))), 1.0))
     loss_displacement_equation = tf.reduce_mean(tf.square(residual_u / scale_u))
     loss_pressure_equation = tf.reduce_mean(tf.square(residual_p / scale_p))
-
-    pressure_field_scale = tf.stop_gradient(
-        tf.maximum(
-            tf.sqrt(tf.reduce_mean(tf.square(initial_p_branch), axis=1, keepdims=True)),
-            epsilon,
-        )
-    )
-    pressure_curvature_scale = pressure_field_scale / tf.square(length)
-    safe_k = tf.where(tf.abs(k) > epsilon, k, epsilon)
-    target_p_xx = tf.stop_gradient((u_xt - source_p) / safe_k)
-    residual_pressure_preconditioned = (target_p_xx - p_xx) / pressure_curvature_scale
-    loss_pressure_preconditioned = tf.reduce_mean(tf.square(residual_pressure_preconditioned))
 
     sample_count = tf.shape(x)[0]
     x_left = tf.zeros((sample_count, 1), dtype=dtype)
@@ -120,10 +107,6 @@ def compute_loss(
         + loss_initial
         + tf.cast(displacement_data_weight, dtype) * loss_data_u
         + tf.cast(pressure_data_weight, dtype) * loss_data_p
-        + tf.math.multiply_no_nan(
-            tf.cast(pressure_precondition_weight, dtype),
-            loss_pressure_preconditioned,
-        )
     )
     components = [
         loss_displacement_equation,
@@ -134,6 +117,5 @@ def compute_loss(
         loss_data,
         loss_data_u,
         loss_data_p,
-        loss_pressure_preconditioned,
     ]
     return loss_total, components, [relative_l2_u, relative_l2_p]

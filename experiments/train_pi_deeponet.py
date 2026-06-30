@@ -25,12 +25,15 @@ def parse_args():
     parser.add_argument("--neurons", type=int, default=128)
     parser.add_argument("--hidden-layers", type=int, default=5)
     parser.add_argument("--learning-rate", type=float, default=1e-5)
+    parser.add_argument("--displacement-learning-rate", type=float, default=None)
+    parser.add_argument("--pressure-learning-rate", type=float, default=None)
     parser.add_argument("--clip-norm", type=float, default=1.0)
     parser.add_argument("--data-weight", type=float, default=0.0, help="Legacy shared weight for both data losses.")
     parser.add_argument("--displacement-data-weight", type=float, default=None)
     parser.add_argument("--pressure-data-weight", type=float, default=None)
-    parser.add_argument("--pressure-precondition-weight", type=float, default=0.0)
-    parser.add_argument("--pressure-precondition-warmup", type=int, default=1000)
+    parser.add_argument("--joint-warmup-epochs", type=int, default=5000)
+    parser.add_argument("--displacement-steps", type=int, default=1)
+    parser.add_argument("--pressure-steps", type=int, default=3)
     parser.add_argument("--elastic-modulus", type=float, default=1.0)
     parser.add_argument("--hydraulic-conductivity", type=float, default=1.0)
     parser.add_argument("--length", type=float, default=0.5)
@@ -38,6 +41,7 @@ def parse_args():
     parser.add_argument("--dtype", choices=("float32", "float64"), default="float32")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--output-dir", type=Path, default=Path("runs/pi_mionet"))
+    parser.add_argument("--initial-weights", type=Path)
     parser.add_argument("--checkpoint-every", type=int, default=100)
     parser.add_argument("--validate-every", type=int, default=100)
     parser.add_argument("--log-every", type=int, default=10)
@@ -67,12 +71,15 @@ def validate_resume_configuration(saved, current):
         "neurons",
         "hidden_layers",
         "learning_rate",
+        "displacement_learning_rate",
+        "pressure_learning_rate",
         "clip_norm",
         "data_weight",
         "displacement_data_weight",
         "pressure_data_weight",
-        "pressure_precondition_weight",
-        "pressure_precondition_warmup",
+        "joint_warmup_epochs",
+        "displacement_steps",
+        "pressure_steps",
         "elastic_modulus",
         "hydraulic_conductivity",
         "length",
@@ -95,10 +102,22 @@ def main():
         args.displacement_data_weight = args.data_weight
     if args.pressure_data_weight is None:
         args.pressure_data_weight = args.data_weight
-    if min(args.displacement_data_weight, args.pressure_data_weight, args.pressure_precondition_weight) < 0:
+    if args.displacement_learning_rate is None:
+        args.displacement_learning_rate = args.learning_rate
+    if args.pressure_learning_rate is None:
+        args.pressure_learning_rate = args.learning_rate
+    if min(args.displacement_data_weight, args.pressure_data_weight) < 0:
         raise ValueError("loss weights must be non-negative")
-    if args.pressure_precondition_warmup < 0:
-        raise ValueError("pressure precondition warmup must be non-negative")
+    if min(args.learning_rate, args.displacement_learning_rate, args.pressure_learning_rate) <= 0:
+        raise ValueError("learning rates must be positive")
+    if args.joint_warmup_epochs < 0:
+        raise ValueError("joint warmup epochs must be non-negative")
+    if min(args.displacement_steps, args.pressure_steps) < 1:
+        raise ValueError("displacement and pressure steps must be positive")
+    if args.resume and args.initial_weights is not None:
+        raise ValueError("--initial-weights cannot be combined with --resume")
+    if args.initial_weights is not None and not args.initial_weights.exists():
+        raise FileNotFoundError(f"initial weights not found: {args.initial_weights}")
 
     tf.keras.backend.set_floatx(args.dtype)
     tf.keras.utils.set_random_seed(args.seed)
@@ -113,13 +132,6 @@ def main():
     )
     if config.length <= 0:
         raise ValueError("length must be positive")
-    if args.pressure_precondition_weight > 0 and config.hydraulic_conductivity <= 0:
-        raise ValueError("pressure preconditioning requires positive hydraulic conductivity")
-    if args.pressure_precondition_weight > 0 and args.dtype != "float64":
-        warnings.warn(
-            "pressure preconditioning divides by hydraulic conductivity; float64 is strongly recommended",
-            stacklevel=2,
-        )
     np_dtype = np.float32 if args.dtype == "float32" else np.float64
     x_domain = np.linspace(0.0, config.length, num=args.size_x, dtype=np_dtype)
     t_domain = np.linspace(0.0, config.final_time, num=args.size_t, dtype=np_dtype).reshape((args.size_t, 1))
@@ -161,12 +173,17 @@ def main():
     )
     if len(displacement_variables) + len(pressure_variables) != len(model.trainable_variables):
         raise RuntimeError("unable to partition model variables into displacement and pressure heads")
-    optimizer = tf.keras.optimizers.Adam(args.learning_rate)
+    if args.initial_weights is not None:
+        model.load_weights(args.initial_weights)
+        print(f"initialized_weights={args.initial_weights}")
+    optimizer_u = tf.keras.optimizers.Adam(args.displacement_learning_rate)
+    optimizer_p = tf.keras.optimizers.Adam(args.pressure_learning_rate)
     checkpoint = tf.train.Checkpoint(
         epoch=tf.Variable(0, dtype=tf.int64),
         best_validation=tf.Variable(float("inf"), dtype=tf.float32),
         best_validation_score=tf.Variable(float("inf"), dtype=tf.float32),
-        optimizer=optimizer,
+        optimizer_u=optimizer_u,
+        optimizer_p=optimizer_p,
         model=model,
     )
     manager = tf.train.CheckpointManager(checkpoint, str(args.output_dir / "checkpoints"), max_to_keep=3)
@@ -200,9 +217,7 @@ def main():
         / (displacement_scale * config.length)
     )
     if (
-        args.pressure_data_weight == 0
-        and args.pressure_precondition_weight == 0
-        and max(pressure_mechanics_ratio, pressure_flow_ratio) < 1e-3
+        args.pressure_data_weight == 0 and max(pressure_mechanics_ratio, pressure_flow_ratio) < 1e-3
     ):
         warnings.warn(
             "pressure is weakly identifiable from the physics residuals at these scales; "
@@ -210,20 +225,24 @@ def main():
             stacklevel=2,
         )
 
+    def evaluate_training_loss(branch_inputs, random_inputs, real_solution, training=True):
+        return compute_loss(
+            config,
+            model,
+            branch_inputs,
+            random_inputs,
+            real_solution,
+            data_weight=args.data_weight,
+            displacement_data_weight=args.displacement_data_weight,
+            pressure_data_weight=args.pressure_data_weight,
+            training=training,
+        )
+
     @tf.function(reduce_retracing=True)
-    def train_step(branch_inputs, random_inputs, real_solution, pressure_precondition_weight):
+    def joint_train_step(branch_inputs, random_inputs, real_solution):
         with tf.GradientTape() as tape:
-            loss_total, loss_components, relative_errors = compute_loss(
-                config,
-                model,
-                branch_inputs,
-                random_inputs,
-                real_solution,
-                data_weight=args.data_weight,
-                displacement_data_weight=args.displacement_data_weight,
-                pressure_data_weight=args.pressure_data_weight,
-                pressure_precondition_weight=pressure_precondition_weight,
-                training=True,
+            loss_total, loss_components, relative_errors = evaluate_training_loss(
+                branch_inputs, random_inputs, real_solution
             )
         variables = displacement_variables + pressure_variables
         gradients = tape.gradient(loss_total, variables)
@@ -234,10 +253,10 @@ def main():
         pressure_gradients, pressure_gradient_norm = tf.clip_by_global_norm(
             gradients[displacement_count:], args.clip_norm
         )
-        clipped_gradients = displacement_gradients + pressure_gradients
         gradient_norm = tf.linalg.global_norm(gradients)
         tf.debugging.check_numerics(loss_total, "non-finite training loss")
-        optimizer.apply_gradients(zip(clipped_gradients, variables))
+        optimizer_u.apply_gradients(zip(displacement_gradients, displacement_variables))
+        optimizer_p.apply_gradients(zip(pressure_gradients, pressure_variables))
         return (
             loss_total,
             loss_components,
@@ -246,6 +265,30 @@ def main():
             displacement_gradient_norm,
             pressure_gradient_norm,
         )
+
+    @tf.function(reduce_retracing=True)
+    def displacement_train_step(branch_inputs, random_inputs, real_solution):
+        with tf.GradientTape() as tape:
+            loss_total, loss_components, relative_errors = evaluate_training_loss(
+                branch_inputs, random_inputs, real_solution
+            )
+        gradients = tape.gradient(loss_total, displacement_variables)
+        clipped_gradients, gradient_norm = tf.clip_by_global_norm(gradients, args.clip_norm)
+        tf.debugging.check_numerics(loss_total, "non-finite displacement-step loss")
+        optimizer_u.apply_gradients(zip(clipped_gradients, displacement_variables))
+        return loss_total, loss_components, relative_errors, gradient_norm
+
+    @tf.function(reduce_retracing=True)
+    def pressure_train_step(branch_inputs, random_inputs, real_solution):
+        with tf.GradientTape() as tape:
+            loss_total, loss_components, relative_errors = evaluate_training_loss(
+                branch_inputs, random_inputs, real_solution
+            )
+        gradients = tape.gradient(loss_total, pressure_variables)
+        clipped_gradients, gradient_norm = tf.clip_by_global_norm(gradients, args.clip_norm)
+        tf.debugging.check_numerics(loss_total, "non-finite pressure-step loss")
+        optimizer_p.apply_gradients(zip(clipped_gradients, pressure_variables))
+        return loss_total, loss_components, relative_errors, gradient_norm
 
     start_epoch = int(checkpoint.epoch.numpy()) + 1
     started = time.perf_counter()
@@ -262,23 +305,33 @@ def main():
                 rng=np.random.default_rng(args.seed + epoch),
                 dtype=np_dtype,
             )
-            if args.pressure_precondition_warmup:
-                warmup_fraction = min(epoch / args.pressure_precondition_warmup, 1.0)
+            if epoch <= args.joint_warmup_epochs:
+                training_phase = "joint"
+                displacement_updates = 1
+                pressure_updates = 1
+                (
+                    loss_total,
+                    components,
+                    relative_errors,
+                    gradient_norm,
+                    displacement_gradient_norm,
+                    pressure_gradient_norm,
+                ) = joint_train_step(*training_batch)
             else:
-                warmup_fraction = 1.0
-            effective_pressure_precondition_weight = args.pressure_precondition_weight * warmup_fraction
-            step_precondition_weight = tf.convert_to_tensor(
-                effective_pressure_precondition_weight,
-                dtype=model.compute_dtype,
-            )
-            (
-                loss_total,
-                components,
-                relative_errors,
-                gradient_norm,
-                displacement_gradient_norm,
-                pressure_gradient_norm,
-            ) = train_step(*training_batch, step_precondition_weight)
+                training_phase = "alternating"
+                displacement_updates = args.displacement_steps
+                pressure_updates = args.pressure_steps
+                for _ in range(args.displacement_steps):
+                    loss_total, components, relative_errors, displacement_gradient_norm = displacement_train_step(
+                        *training_batch
+                    )
+                for _ in range(args.pressure_steps):
+                    loss_total, components, relative_errors, pressure_gradient_norm = pressure_train_step(
+                        *training_batch
+                    )
+                gradient_norm = tf.sqrt(
+                    tf.square(displacement_gradient_norm) + tf.square(pressure_gradient_norm)
+                )
             checkpoint.epoch.assign(epoch)
 
             validation_loss = None
@@ -292,7 +345,6 @@ def main():
                     data_weight=args.data_weight,
                     displacement_data_weight=args.displacement_data_weight,
                     pressure_data_weight=args.pressure_data_weight,
-                    pressure_precondition_weight=args.pressure_precondition_weight,
                 )
                 if validation_loss < tf.cast(checkpoint.best_validation, validation_loss.dtype):
                     checkpoint.best_validation.assign(tf.cast(validation_loss, tf.float32))
@@ -315,8 +367,9 @@ def main():
                     "loss_data": float(components[5]),
                     "loss_data_u": float(components[6]),
                     "loss_data_p": float(components[7]),
-                    "loss_pressure_preconditioned": float(components[8]),
-                    "pressure_precondition_weight": effective_pressure_precondition_weight,
+                    "training_phase": training_phase,
+                    "displacement_updates": displacement_updates,
+                    "pressure_updates": pressure_updates,
                     "relative_l2_u": float(relative_errors[0]),
                     "relative_l2_p": float(relative_errors[1]),
                     "gradient_norm": float(gradient_norm),
