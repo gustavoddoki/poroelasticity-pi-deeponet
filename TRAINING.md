@@ -67,6 +67,37 @@ Report the nonzero pressure data weight with every result. A pure-physics run
 with these dimensional coefficients is retained as a diagnostic, not as the
 recommended final experiment.
 
+Pressure-residual preconditioning can recover a stronger physical gradient
+without changing the zero of the mass-balance equation:
+
+```bash
+python experiments/train_pi_deeponet.py \
+  --epochs 1000 \
+  --num-functions 16 \
+  --points-per-function 16 \
+  --validation-functions 32 \
+  --validation-points 64 \
+  --learning-rate 1e-5 \
+  --elastic-modulus 1e8 \
+  --hydraulic-conductivity 1e-5 \
+  --pressure-data-weight 0.1 \
+  --pressure-precondition-weight 1 \
+  --pressure-precondition-warmup 1000 \
+  --dtype float64 \
+  --output-dir runs/realistic-preconditioned-smoke
+```
+
+The auxiliary residual is `((u_xt - P) / K - p_xx) / (p_c / L^2)`, where
+`p_c` is the RMS initial-pressure scale for each sampled function. Its target is
+detached from the displacement graph, so it preconditions the pressure head
+without sending the `1 / K` amplification into the displacement head. The
+original dimensional residual remains in the objective and metrics. The target
+weight is ramped linearly during `--pressure-precondition-warmup` epochs.
+
+Because division by a small conductivity magnifies cancellation error, use
+`float64` for this experiment. The trainer clips displacement and pressure
+gradients independently and records both pre-clipping norms.
+
 The trainer stores two weight files. `best.weights.h5` minimizes the mean
 relative validation error across displacement and pressure.
 `best.objective.weights.h5` minimizes the validation training objective. Keeping
@@ -101,3 +132,8 @@ Use `--displacement-data-weight` and `--pressure-data-weight` to add separately
 reported manufactured-solution supervision. The legacy `--data-weight` option
 sets both to the same value. Any nonzero value means the experiment is hybrid,
 not physics-only.
+
+`--pressure-precondition-weight` changes only optimization conditioning: it
+multiplies a residual algebraically equivalent to the original mass-balance
+equation for `K > 0`. It does not add solution labels. Runs must report its
+weight, warmup, precision, and the original pressure-equation residual.

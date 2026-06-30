@@ -38,7 +38,7 @@ def test_mionet_forward_and_physics_loss_are_finite_for_realistic_scales():
     assert model.count_params() > 0
     assert np.isfinite(float(loss))
     assert all(np.isfinite(float(value)) for value in components)
-    assert len(components) == 8
+    assert len(components) == 9
     assert all(np.isfinite(float(value)) for value in relative_errors)
 
     weighted_loss, weighted_components, _ = compute_loss(
@@ -50,6 +50,16 @@ def test_mionet_forward_and_physics_loss_are_finite_for_realistic_scales():
     )
     expected = loss + 0.5 * weighted_components[6] + 2.0 * weighted_components[7]
     np.testing.assert_allclose(float(weighted_loss), float(expected), rtol=1e-5)
+
+    preconditioned_loss, preconditioned_components, _ = compute_loss(
+        config,
+        model,
+        *batch,
+        pressure_precondition_weight=1e-8,
+    )
+    expected = loss + 1e-8 * preconditioned_components[8]
+    assert np.isfinite(float(preconditioned_components[8]))
+    np.testing.assert_allclose(float(preconditioned_loss), float(expected), rtol=1e-5)
 
 
 def test_mionet_weights_round_trip(tmp_path):
