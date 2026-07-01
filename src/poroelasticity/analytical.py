@@ -48,6 +48,21 @@ def initial_conditions(config: BiotConfig, x, params: ManufacturedParameters):
     return analytical_solution(config, x, 0.0, params)
 
 
+def darcy_flux(config: BiotConfig, x, t, params: ManufacturedParameters):
+    """Return the manufactured Darcy flux q = -K p_x."""
+
+    wave = np.pi * np.asarray(x) / (2.0 * config.length)
+    frequency = np.pi / (2.0 * config.length)
+    exp_p = np.exp(-np.asarray(t) * params.pressure_decay + params.pressure_shift)
+    return (
+        -config.hydraulic_conductivity
+        * params.pressure_amplitude
+        * frequency
+        * np.cos(wave)
+        * exp_p
+    )
+
+
 def source_terms(config: BiotConfig, x, t, params: ManufacturedParameters):
     """Return source terms U(x,t) and P(x,t) for the manufactured solution."""
 

@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument("--data-weight", type=float, default=0.0, help="Legacy shared weight for both data losses.")
     parser.add_argument("--displacement-data-weight", type=float, default=None)
     parser.add_argument("--pressure-data-weight", type=float, default=None)
-    parser.add_argument("--joint-warmup-epochs", type=int, default=5000)
+    parser.add_argument("--joint-warmup-epochs", type=int, default=100000)
     parser.add_argument("--displacement-steps", type=int, default=1)
     parser.add_argument("--pressure-steps", type=int, default=3)
     parser.add_argument("--elastic-modulus", type=float, default=1.0)
@@ -86,6 +86,7 @@ def validate_resume_configuration(saved, current):
         "final_time",
         "dtype",
         "seed",
+        "formulation",
     )
     mismatches = [key for key in immutable_keys if saved.get(key) != current.get(key)]
     if mismatches:
@@ -132,12 +133,15 @@ def main():
     )
     if config.length <= 0:
         raise ValueError("length must be positive")
+    if config.hydraulic_conductivity <= 0:
+        raise ValueError("the mixed Darcy formulation requires positive hydraulic conductivity")
     np_dtype = np.float32 if args.dtype == "float32" else np.float64
     x_domain = np.linspace(0.0, config.length, num=args.size_x, dtype=np_dtype)
     t_domain = np.linspace(0.0, config.final_time, num=args.size_t, dtype=np_dtype).reshape((args.size_t, 1))
     x_grid = np.tile(x_domain, (args.size_t, 1))
 
     configuration = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
+    configuration["formulation"] = "mixed_darcy"
     configuration["tensorflow_version"] = tf.__version__
     configuration["gpu_devices"] = [device.name for device in tf.config.list_physical_devices("GPU")]
     config_path = args.output_dir / "config.json"
@@ -165,14 +169,14 @@ def main():
         if layer.name.startswith("u_net_")
         for variable in layer.trainable_variables
     )
-    pressure_variables = tuple(
+    pressure_flux_variables = tuple(
         variable
         for layer in model.layers
-        if layer.name.startswith("p_net_")
+        if layer.name.startswith(("p_net_", "q_net_"))
         for variable in layer.trainable_variables
     )
-    if len(displacement_variables) + len(pressure_variables) != len(model.trainable_variables):
-        raise RuntimeError("unable to partition model variables into displacement and pressure heads")
+    if len(displacement_variables) + len(pressure_flux_variables) != len(model.trainable_variables):
+        raise RuntimeError("unable to partition model variables into displacement and pressure/flux heads")
     if args.initial_weights is not None:
         model.load_weights(args.initial_weights)
         print(f"initialized_weights={args.initial_weights}")
@@ -221,7 +225,8 @@ def main():
     ):
         warnings.warn(
             "pressure is weakly identifiable from the physics residuals at these scales; "
-            "use a dimensionless configuration or explicitly report --pressure-data-weight for a hybrid experiment",
+            "the mixed Darcy formulation improves conditioning but does not change the physical coupling; "
+            "report pressure and flux validation across multiple seeds",
             stacklevel=2,
         )
 
@@ -244,26 +249,26 @@ def main():
             loss_total, loss_components, relative_errors = evaluate_training_loss(
                 branch_inputs, random_inputs, real_solution
             )
-        variables = displacement_variables + pressure_variables
+        variables = displacement_variables + pressure_flux_variables
         gradients = tape.gradient(loss_total, variables)
         displacement_count = len(displacement_variables)
         displacement_gradients, displacement_gradient_norm = tf.clip_by_global_norm(
             gradients[:displacement_count], args.clip_norm
         )
-        pressure_gradients, pressure_gradient_norm = tf.clip_by_global_norm(
+        pressure_flux_gradients, pressure_flux_gradient_norm = tf.clip_by_global_norm(
             gradients[displacement_count:], args.clip_norm
         )
         gradient_norm = tf.linalg.global_norm(gradients)
         tf.debugging.check_numerics(loss_total, "non-finite training loss")
         optimizer_u.apply_gradients(zip(displacement_gradients, displacement_variables))
-        optimizer_p.apply_gradients(zip(pressure_gradients, pressure_variables))
+        optimizer_p.apply_gradients(zip(pressure_flux_gradients, pressure_flux_variables))
         return (
             loss_total,
             loss_components,
             relative_errors,
             gradient_norm,
             displacement_gradient_norm,
-            pressure_gradient_norm,
+            pressure_flux_gradient_norm,
         )
 
     @tf.function(reduce_retracing=True)
@@ -284,10 +289,10 @@ def main():
             loss_total, loss_components, relative_errors = evaluate_training_loss(
                 branch_inputs, random_inputs, real_solution
             )
-        gradients = tape.gradient(loss_total, pressure_variables)
+        gradients = tape.gradient(loss_total, pressure_flux_variables)
         clipped_gradients, gradient_norm = tf.clip_by_global_norm(gradients, args.clip_norm)
         tf.debugging.check_numerics(loss_total, "non-finite pressure-step loss")
-        optimizer_p.apply_gradients(zip(clipped_gradients, pressure_variables))
+        optimizer_p.apply_gradients(zip(clipped_gradients, pressure_flux_variables))
         return loss_total, loss_components, relative_errors, gradient_norm
 
     start_epoch = int(checkpoint.epoch.numpy()) + 1
@@ -315,7 +320,7 @@ def main():
                     relative_errors,
                     gradient_norm,
                     displacement_gradient_norm,
-                    pressure_gradient_norm,
+                    pressure_flux_gradient_norm,
                 ) = joint_train_step(*training_batch)
             else:
                 training_phase = "alternating"
@@ -326,11 +331,11 @@ def main():
                         *training_batch
                     )
                 for _ in range(args.pressure_steps):
-                    loss_total, components, relative_errors, pressure_gradient_norm = pressure_train_step(
+                    loss_total, components, relative_errors, pressure_flux_gradient_norm = pressure_train_step(
                         *training_batch
                     )
                 gradient_norm = tf.sqrt(
-                    tf.square(displacement_gradient_norm) + tf.square(pressure_gradient_norm)
+                    tf.square(displacement_gradient_norm) + tf.square(pressure_flux_gradient_norm)
                 )
             checkpoint.epoch.assign(epoch)
 
@@ -360,31 +365,35 @@ def main():
                     "elapsed_seconds": time.perf_counter() - started,
                     "loss": float(loss_total),
                     "loss_pde_u": float(components[0]),
-                    "loss_pde_p": float(components[1]),
-                    "loss_boundary_left": float(components[2]),
-                    "loss_boundary_right": float(components[3]),
-                    "loss_initial": float(components[4]),
-                    "loss_data": float(components[5]),
-                    "loss_data_u": float(components[6]),
-                    "loss_data_p": float(components[7]),
+                    "loss_mass": float(components[1]),
+                    "loss_darcy": float(components[2]),
+                    "loss_boundary_left": float(components[3]),
+                    "loss_boundary_right": float(components[4]),
+                    "loss_initial": float(components[5]),
+                    "loss_data": float(components[6]),
+                    "loss_data_u": float(components[7]),
+                    "loss_data_p": float(components[8]),
                     "training_phase": training_phase,
                     "displacement_updates": displacement_updates,
                     "pressure_updates": pressure_updates,
                     "relative_l2_u": float(relative_errors[0]),
                     "relative_l2_p": float(relative_errors[1]),
+                    "relative_l2_q": float(relative_errors[2]),
                     "gradient_norm": float(gradient_norm),
                     "displacement_gradient_norm": float(displacement_gradient_norm),
-                    "pressure_gradient_norm": float(pressure_gradient_norm),
+                    "pressure_flux_gradient_norm": float(pressure_flux_gradient_norm),
                     "validation_loss": "" if validation_loss is None else float(validation_loss),
                     "validation_score": "" if validation_score is None else float(validation_score),
                     "validation_relative_l2_u": "" if validation_errors is None else float(validation_errors[0]),
                     "validation_relative_l2_p": "" if validation_errors is None else float(validation_errors[1]),
+                    "validation_relative_l2_q": "" if validation_errors is None else float(validation_errors[2]),
                 }
                 append_metrics(args.output_dir / "metrics.csv", row)
                 print(
                     f"epoch={epoch} loss={float(loss_total):.6e} "
                     f"rel_l2_u={float(relative_errors[0]):.4f} "
-                    f"rel_l2_p={float(relative_errors[1]):.4f}"
+                    f"rel_l2_p={float(relative_errors[1]):.4f} "
+                    f"rel_l2_q={float(relative_errors[2]):.4f}"
                 )
 
             if epoch % args.checkpoint_every == 0:

@@ -9,7 +9,7 @@ def compute_loss(
     pressure_data_weight=None,
     training=False,
 ):
-    """Compute physics, boundary, initial, and optional data losses."""
+    """Compute the mixed Biot physics, boundary, initial, and optional data losses."""
 
     import tensorflow as tf
 
@@ -28,6 +28,13 @@ def compute_loss(
     k = tf.cast(config.hydraulic_conductivity, dtype)
     length = tf.cast(config.length, dtype)
     epsilon = tf.cast(tf.keras.backend.epsilon(), dtype)
+    pressure_scale = tf.stop_gradient(
+        tf.maximum(
+            tf.sqrt(tf.reduce_mean(tf.square(initial_p_branch), axis=1, keepdims=True)),
+            epsilon,
+        )
+    )
+    flux_scale = tf.stop_gradient(tf.maximum(tf.abs(k) * pressure_scale / length, epsilon))
 
     model_inputs = {
         "branch_input_u0": initial_u_branch,
@@ -40,29 +47,33 @@ def compute_loss(
         outer_tape.watch([x, t])
         with tf.GradientTape(persistent=True) as inner_tape:
             inner_tape.watch([x, t])
-            u, p = model(
+            u, p, normalized_q = model(
                 {**model_inputs, "trunk_input": tf.concat([x, t], axis=-1)},
                 training=training,
             )
         u_x = inner_tape.gradient(u, x)
         p_x = inner_tape.gradient(p, x)
+        normalized_q_x = inner_tape.gradient(normalized_q, x)
 
     u_xx = outer_tape.gradient(u_x, x)
     u_xt = outer_tape.gradient(u_x, t)
-    p_xx = outer_tape.gradient(p_x, x)
+    q = flux_scale * normalized_q
+    q_x = flux_scale * normalized_q_x
 
     residual_u = -e * u_xx + p_x - source_u
-    residual_p = u_xt - k * p_xx - source_p
+    residual_mass = u_xt + q_x - source_p
+    residual_darcy = normalized_q + k * p_x / flux_scale
     scale_u = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(source_u))), 1.0))
     scale_p = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(source_p))), 1.0))
     loss_displacement_equation = tf.reduce_mean(tf.square(residual_u / scale_u))
-    loss_pressure_equation = tf.reduce_mean(tf.square(residual_p / scale_p))
+    loss_mass_equation = tf.reduce_mean(tf.square(residual_mass / scale_p))
+    loss_darcy_equation = tf.reduce_mean(tf.square(residual_darcy))
 
     sample_count = tf.shape(x)[0]
     x_left = tf.zeros((sample_count, 1), dtype=dtype)
     with tf.GradientTape() as tape:
         tape.watch(x_left)
-        u_left, p_left = model(
+        u_left, p_left, _ = model(
             {**model_inputs, "trunk_input": tf.concat([x_left, t], axis=-1)},
             training=training,
         )
@@ -70,23 +81,20 @@ def compute_loss(
     loss_left_boundary = tf.reduce_mean(tf.square(length * u_x_left)) + tf.reduce_mean(tf.square(p_left))
 
     x_right = tf.fill((sample_count, 1), length)
-    with tf.GradientTape() as tape:
-        tape.watch(x_right)
-        u_right, p_right = model(
-            {**model_inputs, "trunk_input": tf.concat([x_right, t], axis=-1)},
-            training=training,
-        )
-    p_x_right = tape.gradient(p_right, x_right)
-    loss_right_boundary = tf.reduce_mean(tf.square(u_right)) + tf.reduce_mean(tf.square(length * p_x_right))
+    u_right, _, normalized_q_right = model(
+        {**model_inputs, "trunk_input": tf.concat([x_right, t], axis=-1)},
+        training=training,
+    )
+    loss_right_boundary = tf.reduce_mean(tf.square(u_right)) + tf.reduce_mean(tf.square(normalized_q_right))
 
     t_initial = tf.zeros((sample_count, 1), dtype=dtype)
-    u_initial, p_initial = model(
+    u_initial, p_initial, _ = model(
         {**model_inputs, "trunk_input": tf.concat([x, t_initial], axis=-1)},
         training=training,
     )
     loss_initial = tf.reduce_mean(tf.square(u_initial - initial_u)) + tf.reduce_mean(tf.square(p_initial - initial_p))
 
-    true_u, true_p = real_solution
+    true_u, true_p, true_q = real_solution
     scale_real_u = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(true_u))), epsilon))
     scale_real_p = tf.stop_gradient(tf.maximum(tf.sqrt(tf.reduce_mean(tf.square(true_p))), epsilon))
     loss_data_u = tf.reduce_mean(tf.square((u - true_u) / scale_real_u))
@@ -98,8 +106,11 @@ def compute_loss(
     relative_l2_p = tf.sqrt(tf.reduce_sum(tf.square(p - true_p))) / tf.maximum(
         tf.sqrt(tf.reduce_sum(tf.square(true_p))), epsilon
     )
+    relative_l2_q = tf.sqrt(tf.reduce_sum(tf.square(q - true_q))) / tf.maximum(
+        tf.sqrt(tf.reduce_sum(tf.square(true_q))), epsilon
+    )
 
-    loss_physics = loss_displacement_equation + loss_pressure_equation
+    loss_physics = loss_displacement_equation + loss_mass_equation + loss_darcy_equation
     loss_total = (
         loss_physics
         + loss_left_boundary
@@ -110,7 +121,8 @@ def compute_loss(
     )
     components = [
         loss_displacement_equation,
-        loss_pressure_equation,
+        loss_mass_equation,
+        loss_darcy_equation,
         loss_left_boundary,
         loss_right_boundary,
         loss_initial,
@@ -118,4 +130,4 @@ def compute_loss(
         loss_data_u,
         loss_data_p,
     ]
-    return loss_total, components, [relative_l2_u, relative_l2_p]
+    return loss_total, components, [relative_l2_u, relative_l2_p, relative_l2_q]

@@ -29,6 +29,9 @@ maintaining a corrected, testable implementation under `src/`.
 - The failed pressure-residual preconditioner that divided by `K` was removed;
   it amplified early displacement error and drove the pressure solution away
   from the manufactured reference.
+- Neural pressure evolution uses the equivalent mixed Darcy system with a
+  normalized flux head, replacing the second pressure derivative by mass
+  balance and a first-order Darcy identity without supervised targets.
 
 These changes correct implementation and transcription issues found while
 consolidating the two legacy repositories. The historical manuscript is left

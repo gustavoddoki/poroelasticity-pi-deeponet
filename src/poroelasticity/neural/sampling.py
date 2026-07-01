@@ -4,6 +4,7 @@ from poroelasticity.analytical import (
     BiotConfig,
     ManufacturedParameters,
     analytical_solution,
+    darcy_flux,
     initial_conditions,
     source_terms,
 )
@@ -53,6 +54,7 @@ def create_sample(
     initial_p_random = np.empty((sample_count, 1), dtype=dtype)
     real_u = np.empty((sample_count, 1), dtype=dtype)
     real_p = np.empty((sample_count, 1), dtype=dtype)
+    real_q = np.empty((sample_count, 1), dtype=dtype)
 
     for function_index in range(num_functions):
         params = random_manufactured_parameters(rng)
@@ -71,6 +73,7 @@ def create_sample(
         source_u_values, source_p_values = source_terms(config, x_values, t_values, params)
         initial_u_values, initial_p_values = initial_conditions(config, x_values, params)
         real_u_values, real_p_values = analytical_solution(config, x_values, t_values, params)
+        real_q_values = darcy_flux(config, x_values, t_values, params)
 
         x_random[start:stop, 0] = x_values
         t_random[start:stop, 0] = t_values
@@ -80,6 +83,7 @@ def create_sample(
         initial_p_random[start:stop, 0] = initial_p_values
         real_u[start:stop, 0] = real_u_values
         real_p[start:stop, 0] = real_p_values
+        real_q[start:stop, 0] = real_q_values
 
     branch_inputs = [source_u_branch, source_p_branch, initial_u_branch, initial_p_branch]
     random_inputs = [
@@ -90,4 +94,4 @@ def create_sample(
         initial_u_random,
         initial_p_random,
     ]
-    return branch_inputs, random_inputs, [real_u, real_p]
+    return branch_inputs, random_inputs, [real_u, real_p, real_q]

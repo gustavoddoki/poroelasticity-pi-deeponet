@@ -34,11 +34,12 @@ def test_mionet_forward_and_physics_loss_are_finite_for_realistic_scales():
 
     loss, components, relative_errors = compute_loss(config, model, *batch)
 
-    assert model.name == "physics_informed_mionet_biot"
+    assert model.name == "mixed_physics_informed_mionet_biot"
     assert model.count_params() > 0
     assert np.isfinite(float(loss))
     assert all(np.isfinite(float(value)) for value in components)
-    assert len(components) == 8
+    assert len(components) == 9
+    assert len(relative_errors) == 3
     assert all(np.isfinite(float(value)) for value in relative_errors)
 
     weighted_loss, weighted_components, _ = compute_loss(
@@ -48,11 +49,11 @@ def test_mionet_forward_and_physics_loss_are_finite_for_realistic_scales():
         displacement_data_weight=0.5,
         pressure_data_weight=2.0,
     )
-    expected = loss + 0.5 * weighted_components[6] + 2.0 * weighted_components[7]
+    expected = loss + 0.5 * weighted_components[7] + 2.0 * weighted_components[8]
     np.testing.assert_allclose(float(weighted_loss), float(expected), rtol=1e-5)
 
 
-def test_displacement_and_pressure_heads_update_independently():
+def test_displacement_and_pressure_flux_heads_update_independently():
     tf.keras.backend.set_floatx("float32")
     tf.keras.utils.set_random_seed(7)
     config = BiotConfig()
@@ -78,29 +79,29 @@ def test_displacement_and_pressure_heads_update_independently():
         if layer.name.startswith("u_net_")
         for variable in layer.trainable_variables
     )
-    pressure_variables = tuple(
+    pressure_flux_variables = tuple(
         variable
         for layer in model.layers
-        if layer.name.startswith("p_net_")
+        if layer.name.startswith(("p_net_", "q_net_"))
         for variable in layer.trainable_variables
     )
-    assert len(displacement_variables) + len(pressure_variables) == len(model.trainable_variables)
+    assert len(displacement_variables) + len(pressure_flux_variables) == len(model.trainable_variables)
 
-    pressure_before = [variable.numpy().copy() for variable in pressure_variables]
+    pressure_flux_before = [variable.numpy().copy() for variable in pressure_flux_variables]
     with tf.GradientTape() as tape:
         loss, _, _ = compute_loss(config, model, *batch, training=True)
     gradients = tape.gradient(loss, displacement_variables)
     assert all(gradient is not None for gradient in gradients)
     tf.keras.optimizers.Adam(1e-5).apply_gradients(zip(gradients, displacement_variables))
-    for expected, actual in zip(pressure_before, pressure_variables):
+    for expected, actual in zip(pressure_flux_before, pressure_flux_variables):
         np.testing.assert_array_equal(expected, actual.numpy())
 
     displacement_before = [variable.numpy().copy() for variable in displacement_variables]
     with tf.GradientTape() as tape:
         loss, _, _ = compute_loss(config, model, *batch, training=True)
-    gradients = tape.gradient(loss, pressure_variables)
+    gradients = tape.gradient(loss, pressure_flux_variables)
     assert all(gradient is not None for gradient in gradients)
-    tf.keras.optimizers.Adam(1e-5).apply_gradients(zip(gradients, pressure_variables))
+    tf.keras.optimizers.Adam(1e-5).apply_gradients(zip(gradients, pressure_flux_variables))
     for expected, actual in zip(displacement_before, displacement_variables):
         np.testing.assert_array_equal(expected, actual.numpy())
 

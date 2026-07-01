@@ -8,7 +8,8 @@ included as the classical baseline.
 
 Biot consolidation describes the coupled interaction between deformation and
 fluid pressure in porous media. The model studied here is a stiff coupled PDE
-system with displacement `u(x, t)` and pressure `p(x, t)`.
+system with displacement `u(x, t)` and pressure `p(x, t)`. The neural solver
+also predicts Darcy flux `q(x,t)` as an auxiliary physical variable.
 
 ## Why This Project Exists
 
@@ -20,7 +21,8 @@ training phase to enable fast inference for new inputs.
 The project combines:
 
 - a finite-volume Gauss-Seidel solver with implicit Euler time stepping;
-- a PI-MIONet with branches for `U`, `P`, `u0`, and `p0`;
+- a mixed PI-MIONet with branches for `U`, `P`, `u0`, and `p0` and heads for
+  `u`, `p`, and normalized Darcy flux;
 - manufactured analytical solutions for physics and accuracy validation;
 - deterministic sampling, validation, checkpoints, and resumed neural runs;
 - the original manuscript and selected result figures.
@@ -62,6 +64,19 @@ The one-dimensional model is defined by
 where `E` is the elastic modulus, `K` is the hydraulic conductivity, `U` is the
 body-force density source term, and `P` is the fluid injection/extraction source
 term.
+
+For neural training, the pressure equation is written in the mathematically
+equivalent mixed form
+
+```math
+q=-K\frac{\partial p}{\partial x},\qquad
+\frac{\partial}{\partial t}\left(\frac{\partial u}{\partial x}\right)
++\frac{\partial q}{\partial x}=P(x,t).
+```
+
+This lowers the highest pressure derivative from second to first order. The
+Darcy identity is normalized by a characteristic flux, improving pressure
+gradients without adding labels or changing the governing equations.
 
 ## Result Status
 

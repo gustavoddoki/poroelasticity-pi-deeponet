@@ -29,6 +29,8 @@ def test_sample_reuses_each_function_across_collocation_points():
     assert branch_inputs[2].shape == (6, size_x)
     assert random_inputs[0].shape == (6, 1)
     assert real_solution[0].shape == (6, 1)
+    assert len(real_solution) == 3
+    assert real_solution[2].shape == (6, 1)
     assert branch_inputs[0].dtype == np.float32
     np.testing.assert_array_equal(branch_inputs[0][0], branch_inputs[0][1])
     np.testing.assert_array_equal(branch_inputs[0][1], branch_inputs[0][2])

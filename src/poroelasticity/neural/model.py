@@ -8,7 +8,7 @@ def create_model(
     neurons_per_layer: int,
     hidden_layers: int = 5,
 ):
-    """Create a two-output physics-informed MIONet for the Biot system."""
+    """Create a mixed physics-informed MIONet for displacement, pressure, and flux."""
 
     import tensorflow as tf
 
@@ -68,9 +68,10 @@ def create_model(
 
     displacement = operator_output("u_net")
     pressure = operator_output("p_net")
+    normalized_flux = operator_output("q_net")
 
     return tf.keras.Model(
         inputs=[branch_input_u0, branch_input_p0, branch_input_u, branch_input_p, trunk_input],
-        outputs=[displacement, pressure],
-        name="physics_informed_mionet_biot",
+        outputs=[displacement, pressure, normalized_flux],
+        name="mixed_physics_informed_mionet_biot",
     )

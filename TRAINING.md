@@ -2,7 +2,8 @@
 
 The neural model is a physics-informed multi-input operator network (MIONet):
 four branch encoders process `U`, `P`, `u0`, and `p0`, while a trunk encoder
-processes `(x, t)`. Separate operator heads predict displacement and pressure.
+processes `(x, t)`. Separate operator heads predict displacement, pressure,
+and the normalized Darcy flux.
 
 ## Reproducible Smoke Test
 
@@ -44,7 +45,7 @@ python experiments/train_pi_deeponet.py \
   --output-dir runs/hypothetical
 ```
 
-Realistic material parameters require an explicitly hybrid pressure constraint:
+Realistic material parameters use the physics-only mixed Darcy formulation:
 
 ```bash
 python experiments/train_pi_deeponet.py \
@@ -55,65 +56,53 @@ python experiments/train_pi_deeponet.py \
   --validation-points 64 \
   --elastic-modulus 1e8 \
   --hydraulic-conductivity 1e-5 \
-  --pressure-data-weight 1 \
-  --validate-every 100 \
-  --log-every 10 \
-  --output-dir runs/realistic-hybrid
-```
-
-This is a physics-informed hybrid experiment: pressure labels from the
-manufactured solution supplement the PDE, boundary, and initial residuals.
-Report the nonzero pressure data weight with every result. A pure-physics run
-with these dimensional coefficients is retained as a diagnostic, not as the
-recommended final experiment.
-
-For a pure-physics staged experiment, first train both heads jointly and then
-alternate one displacement update with three pressure updates:
-
-```bash
-python experiments/train_pi_deeponet.py \
-  --epochs 50000 \
-  --num-functions 16 \
-  --points-per-function 16 \
-  --validation-functions 32 \
-  --validation-points 64 \
-  --learning-rate 1e-5 \
-  --elastic-modulus 1e8 \
-  --hydraulic-conductivity 1e-5 \
   --displacement-data-weight 0 \
   --pressure-data-weight 0 \
-  --joint-warmup-epochs 5000 \
+  --joint-warmup-epochs 100000 \
   --displacement-steps 1 \
-  --pressure-steps 3 \
-  --dtype float64 \
-  --output-dir runs/realistic-staged-50k
+  --pressure-steps 1 \
+  --dtype float32 \
+  --validate-every 100 \
+  --log-every 10 \
+  --output-dir runs/realistic-mixed-physics-only
 ```
 
-The model already contains independent `u_net_*` and `p_net_*` parameter
-groups. During the joint warmup, one loss evaluation updates both groups with
-separate Adam states and separate gradient clipping. After warmup, block
-coordinate training freezes one group while updating the other. Both updates
-use the original coupled Biot residuals; only the optimized parameter group
-changes.
+Define the Darcy flux as `q = -K p_x`. The original mass equation is then
+represented by the equivalent first-order system
 
-To fine-tune an existing baseline instead of starting from random weights, use
-`--initial-weights path/to/best.weights.h5 --joint-warmup-epochs 0` and a new
-output directory. `--initial-weights` and `--resume` are mutually exclusive.
+```text
+u_xt + q_x - P = 0
+q + K p_x = 0
+```
 
-An attempted auxiliary residual that divided the pressure equation by `K` was
+The network predicts the normalized flux `q_hat = q / q_c`, with
+`q_c = K p_c / L` and `p_c` obtained from the RMS initial-pressure branch.
+Dividing Darcy's identity by `q_c` gives an order-one pressure gradient without
+dividing the mass residual or any displacement error by `K`. The impermeable
+right boundary is imposed as `q_hat(L,t) = 0`.
+
+The loss contains only momentum balance, mass balance, Darcy's identity,
+boundary conditions, and initial conditions when both data weights are zero.
+Analytical `u`, `p`, and `q` values are used only for validation metrics and
+checkpoint selection, never as optimization targets in this configuration.
+
+Two-output checkpoints are incompatible with this three-output model. Start a
+new run directory. `--initial-weights` may only reference weights produced by
+the mixed model; `--initial-weights` and `--resume` are mutually exclusive.
+
+An attempted auxiliary residual that divided the mass equation by `K` was
 removed after it amplified early displacement error and caused pressure
-divergence. Do not reproduce that run as a conditioning strategy. Staged
-optimization preserves the physical objective without division by `K`.
+divergence. Alternating displacement and pressure updates also failed to
+improve pressure identifiability. Both are retained only as negative ablations.
 
 The trainer stores two weight files. `best.weights.h5` minimizes the mean
 relative validation error across displacement and pressure.
 `best.objective.weights.h5` minimizes the validation training objective. Keeping
 both makes disagreement between physical residuals and field accuracy visible.
 
-Start with `float32`, which is substantially faster on common free GPUs. For a
-pure-physics dimensional experiment, use `float64` and first run a short
-comparison because recovering pressure requires resolving differences between
-terms with widely separated magnitudes.
+Start with `float32`, which is substantially faster on common free GPUs. The
+mixed residual removes the second pressure derivative and normalizes the Darcy
+identity; compare `float64` as a precision ablation rather than a requirement.
 
 ## Free GPU Runtimes
 
@@ -140,5 +129,6 @@ reported manufactured-solution supervision. The legacy `--data-weight` option
 sets both to the same value. Any nonzero value means the experiment is hybrid,
 not physics-only.
 
-Staged runs must report the joint warmup, displacement/pressure update ratio,
-both learning rates, precision, and both original PDE residuals.
+Mixed runs must report all three residuals, both learning rates, precision,
+flux normalization, random seed, and relative validation errors for `u`, `p`,
+and `q`.
