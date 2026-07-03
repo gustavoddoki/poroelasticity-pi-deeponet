@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from poroelasticity.analytical import BiotConfig
+from poroelasticity.analytical import BiotConfig, non_dimensional_scales
 from poroelasticity.neural.losses import compute_loss
 from poroelasticity.neural.model import create_model
 from poroelasticity.neural.sampling import create_sample
@@ -30,9 +30,10 @@ def test_mionet_forward_and_physics_loss_are_finite_for_realistic_scales():
         rng=np.random.default_rng(5),
         dtype=np.float32,
     )
+    scales = non_dimensional_scales(config)
     model = create_model(config, size_x, size_t, neurons_per_layer=8, hidden_layers=2)
 
-    loss, components, relative_errors = compute_loss(config, model, *batch)
+    loss, components, relative_errors = compute_loss(config, model, *batch, scales=scales)
 
     assert model.name == "mixed_physics_informed_mionet_biot"
     assert model.count_params() > 0
@@ -48,9 +49,46 @@ def test_mionet_forward_and_physics_loss_are_finite_for_realistic_scales():
         *batch,
         displacement_data_weight=0.5,
         pressure_data_weight=2.0,
+        scales=scales,
     )
     expected = loss + 0.5 * weighted_components[7] + 2.0 * weighted_components[8]
     np.testing.assert_allclose(float(weighted_loss), float(expected), rtol=1e-5)
+
+
+def test_nondimensional_loss_uses_expected_residual_factors():
+    tf.keras.backend.set_floatx("float32")
+    tf.keras.utils.set_random_seed(11)
+    config = BiotConfig(elastic_modulus=1e8, hydraulic_conductivity=1e-5)
+    size_x = 3
+    size_t = 4
+    x_domain = np.linspace(0.0, config.length, size_x, dtype=np.float32)
+    t_domain = np.linspace(0.0, config.final_time, size_t, dtype=np.float32).reshape((size_t, 1))
+    x_grid = np.tile(x_domain, (size_t, 1))
+    batch = create_sample(
+        config,
+        size_x,
+        size_t,
+        num_functions=2,
+        points_per_function=2,
+        x_grid=x_grid,
+        t_grid=t_domain,
+        rng=np.random.default_rng(11),
+        dtype=np.float32,
+    )
+
+    scales = non_dimensional_scales(config)
+    model = create_model(config, size_x, size_t, neurons_per_layer=8, hidden_layers=2)
+    _, components, _ = compute_loss(config, model, *batch, scales=scales)
+    displacement_loss, mass_loss = float(components[0]), float(components[1])
+
+    assert np.isfinite(displacement_loss)
+    assert np.isfinite(mass_loss)
+    assert displacement_loss > 0.0
+    assert mass_loss > 0.0
+
+    displacement_factor = (config.length**2) / (config.elastic_modulus * scales.displacement)
+    mass_factor = (config.length**3) / (config.hydraulic_conductivity * config.elastic_modulus * scales.displacement)
+    assert mass_factor / displacement_factor == pytest.approx(config.length / config.hydraulic_conductivity)
 
 
 def test_displacement_and_pressure_flux_heads_update_independently():

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from poroelasticity.analytical import BiotConfig
+from poroelasticity.analytical import BiotConfig, non_dimensional_scales
 from poroelasticity.neural.losses import compute_loss
 from poroelasticity.neural.model import create_model
 from poroelasticity.neural.sampling import create_sample
@@ -38,6 +38,8 @@ def parse_args():
     parser.add_argument("--hydraulic-conductivity", type=float, default=1.0)
     parser.add_argument("--length", type=float, default=0.5)
     parser.add_argument("--final-time", type=float, default=1.0)
+    parser.add_argument("--displacement-scale", type=float, default=1.0)
+    parser.add_argument("--no-non-dimensionalization", action="store_true")
     parser.add_argument("--dtype", choices=("float32", "float64"), default="float32")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--output-dir", type=Path, default=Path("runs/pi_mionet"))
@@ -87,6 +89,7 @@ def validate_resume_configuration(saved, current):
         "dtype",
         "seed",
         "formulation",
+        "displacement_scale",
     )
     mismatches = [key for key in immutable_keys if saved.get(key) != current.get(key)]
     if mismatches:
@@ -142,8 +145,15 @@ def main():
 
     configuration = {key: str(value) if isinstance(value, Path) else value for key, value in vars(args).items()}
     configuration["formulation"] = "mixed_darcy"
+    configuration["non_dimensionalized"] = not args.no_non_dimensionalization
     configuration["tensorflow_version"] = tf.__version__
     configuration["gpu_devices"] = [device.name for device in tf.config.list_physical_devices("GPU")]
+    scales = None if args.no_non_dimensionalization else non_dimensional_scales(config, args.displacement_scale)
+    if scales is not None:
+        print(
+            f"non-dimensional scales: u_c={scales.displacement:.6e} "
+            f"p_c={scales.pressure:.6e} t_c={scales.time:.6e}"
+        )
     config_path = args.output_dir / "config.json"
     if args.resume:
         if not config_path.exists():
@@ -241,6 +251,7 @@ def main():
             displacement_data_weight=args.displacement_data_weight,
             pressure_data_weight=args.pressure_data_weight,
             training=training,
+            scales=scales,
         )
 
     @tf.function(reduce_retracing=True)
@@ -350,6 +361,7 @@ def main():
                     data_weight=args.data_weight,
                     displacement_data_weight=args.displacement_data_weight,
                     pressure_data_weight=args.pressure_data_weight,
+                    scales=scales,
                 )
                 if validation_loss < tf.cast(checkpoint.best_validation, validation_loss.dtype):
                     checkpoint.best_validation.assign(tf.cast(validation_loss, tf.float32))

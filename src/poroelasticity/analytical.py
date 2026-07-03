@@ -25,6 +25,76 @@ class ManufacturedParameters:
     pressure_shift: float = 0.0
 
 
+@dataclass(frozen=True)
+class NonDimensionalScales:
+    """Characteristic scales that balance the Biot PDE coefficients."""
+
+    length: float
+    displacement: float
+    pressure: float
+    time: float
+
+
+def non_dimensional_scales(config: BiotConfig, displacement_scale: float = 1.0) -> NonDimensionalScales:
+    """Return characteristic scales that make every term in the Biot system O(1).
+
+    The scaling choice targets the dominant balance of the coupled equations:
+
+    - pressure scale balances the elastic and pressure-gradient terms in the
+      displacement equation, ``p_c = E * u_c / L``;
+    - time scale balances the storage and conduction terms in the mass
+      conservation equation, ``t_c = L**2 / (K * E)``.
+
+    With these choices the non-dimensional equations read
+
+    .. math::
+        -\\partial_{\\tilde{x}\\tilde{x}} \\tilde{u} + \\partial_{\\tilde{x}} \\tilde{p} = \\tilde{U}
+        \\partial_{\\tilde{x}\\tau} \\tilde{u} - \\partial_{\\tilde{x}\\tilde{x}} \\tilde{p} = \\tilde{P}
+
+    so the pressure field stops being weakly identifiable because the
+    ``K * p_xx`` gradient damping is removed from the residual.
+    """
+
+    if displacement_scale <= 0.0:
+        raise ValueError("displacement_scale must be positive")
+
+    length = config.length
+    elastic_modulus = config.elastic_modulus
+    hydraulic_conductivity = config.hydraulic_conductivity
+    pressure_scale = elastic_modulus * displacement_scale / length
+    time_scale = length**2 / (hydraulic_conductivity * elastic_modulus)
+    return NonDimensionalScales(
+        length=length,
+        displacement=displacement_scale,
+        pressure=pressure_scale,
+        time=time_scale,
+    )
+
+
+def normalize_displacement(scales: NonDimensionalScales, displacement) -> np.ndarray:
+    """Return the non-dimensional displacement ``u_tilde = u / u_c``."""
+
+    return np.asarray(displacement) / scales.displacement
+
+
+def normalize_pressure(scales: NonDimensionalScales, pressure) -> np.ndarray:
+    """Return the non-dimensional pressure ``p_tilde = p / p_c``."""
+
+    return np.asarray(pressure) / scales.pressure
+
+
+def denormalize_displacement(scales: NonDimensionalScales, displacement) -> np.ndarray:
+    """Return the physical displacement ``u = u_c * u_tilde``."""
+
+    return scales.displacement * np.asarray(displacement)
+
+
+def denormalize_pressure(scales: NonDimensionalScales, pressure) -> np.ndarray:
+    """Return the physical pressure ``p = p_c * p_tilde``."""
+
+    return scales.pressure * np.asarray(pressure)
+
+
 def analytical_solution(config: BiotConfig, x, t, params: ManufacturedParameters):
     """Return the manufactured displacement and pressure fields."""
 

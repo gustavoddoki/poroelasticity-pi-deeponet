@@ -32,6 +32,14 @@ maintaining a corrected, testable implementation under `src/`.
 - Neural pressure evolution uses the equivalent mixed Darcy system with a
   normalized flux head, replacing the second pressure derivative by mass
   balance and a first-order Darcy identity without supervised targets.
+- The displacement and mass conservation PDE residuals are rescaled by
+  `L**2 / (E * u_c)` and `L**3 / (K * E * u_c)` so that the coupled equations
+  become `-u_xx + p_x = U` and `u_xt - p_xx = P` in non-dimensional form,
+  removing the gradient damping caused by the disparate elastic and hydraulic
+  coefficients. The boundary, initial-condition, and data losses remain in
+  physical units so that direct pressure supervision stays above fp32
+  precision; an earlier version that also normalized those losses masked the
+  pressure gradient entirely.
 
 These changes correct implementation and transcription issues found while
 consolidating the two legacy repositories. The historical manuscript is left

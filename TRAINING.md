@@ -132,3 +132,41 @@ not physics-only.
 Mixed runs must report all three residuals, both learning rates, precision,
 flux normalization, random seed, and relative validation errors for `u`, `p`,
 and `q`.
+
+## Non-Dimensionalization
+
+The displacement equation is multiplied by ``E`` while the pressure equation
+is multiplied by ``K``, so the two fields interact with coefficients that
+differ by thirteen orders of magnitude when ``E = 1e8`` and ``K = 1e-5``. The
+mass residual then becomes effectively decoupled from ``p`` because the
+``K * p_xx`` term vanishes relative to ``u_xt`` in the original second-order
+form.
+
+The trainer applies the characteristic scales
+
+```
+p_c = E * u_c / L
+t_c = L**2 / (K * E)
+```
+
+so that the non-dimensional equations read
+
+```
+-u_xx + p_x = U_tilde
+u_xt - p_xx = P_tilde
+```
+
+with every PDE coefficient equal to one. The flags `--displacement-scale` and
+`--no-non-dimensionalization` control the choice; the default behaviour keeps
+the scaling on, and the trainer prints the chosen scales at the start of
+every run. Pass `--no-non-dimensionalization` only when comparing directly to
+the legacy raw-residual form.
+
+### Loss Decomposition
+
+The scaling is applied **only to the displacement and mass conservation PDE
+residuals**. The Darcy identity is already balanced by the internal
+``flux_scale = K * p_c / L`` normalization. The boundary, initial-condition,
+and data losses stay in physical units because dividing them by ``p_c``
+would push typical pressure errors (order ``1``) below fp32 precision once
+``p_c`` is on the order of ``E``, masking the pressure gradient entirely.
