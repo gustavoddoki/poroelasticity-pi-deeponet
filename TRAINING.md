@@ -133,6 +133,24 @@ Mixed runs must report all three residuals, both learning rates, precision,
 flux normalization, random seed, and relative validation errors for `u`, `p`,
 and `q`.
 
+### Adaptive PDE balancing
+
+Pass `--adaptive-loss-balancing` to balance the gradient norms of the momentum,
+mass, and Darcy residuals during joint training. The boundary and initial losses
+deliberately keep unit weight: balancing all terms by inverse gradient norm can
+suppress the initial condition and admit a misleading near-zero solution. The
+CSV log records all six effective weights. `--balance-momentum`,
+`--balance-min-weight`, and `--balance-max-weight` control smoothing and bounds.
+Adaptive balancing currently requires `--joint-warmup-epochs` to cover the
+whole run.
+
+Use `--early-stopping-patience N` to stop after `N` epochs without improvement
+in the combined displacement/pressure validation score. This criterion is
+preferred over the physics objective because a decreasing residual can coexist
+with worsening field accuracy. The best field checkpoint remains stored in
+`best.weights.h5`. Set `--early-stopping-min-delta` to ignore numerically tiny
+score changes when resetting patience.
+
 ## Non-Dimensionalization
 
 The displacement equation is multiplied by ``E`` while the pressure equation

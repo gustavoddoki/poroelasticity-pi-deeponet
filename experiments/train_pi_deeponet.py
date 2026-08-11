@@ -28,6 +28,10 @@ def parse_args():
     parser.add_argument("--displacement-learning-rate", type=float, default=None)
     parser.add_argument("--pressure-learning-rate", type=float, default=None)
     parser.add_argument("--clip-norm", type=float, default=1.0)
+    parser.add_argument("--adaptive-loss-balancing", action="store_true")
+    parser.add_argument("--balance-momentum", type=float, default=0.9)
+    parser.add_argument("--balance-min-weight", type=float, default=0.1)
+    parser.add_argument("--balance-max-weight", type=float, default=10.0)
     parser.add_argument("--data-weight", type=float, default=0.0, help="Legacy shared weight for both data losses.")
     parser.add_argument("--displacement-data-weight", type=float, default=None)
     parser.add_argument("--pressure-data-weight", type=float, default=None)
@@ -47,6 +51,18 @@ def parse_args():
     parser.add_argument("--checkpoint-every", type=int, default=100)
     parser.add_argument("--validate-every", type=int, default=100)
     parser.add_argument("--log-every", type=int, default=10)
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=0,
+        help="Stop after this many epochs without validation-score improvement; 0 disables it.",
+    )
+    parser.add_argument(
+        "--early-stopping-min-delta",
+        type=float,
+        default=0.0,
+        help="Minimum validation-score decrease counted as an early-stopping improvement.",
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--deterministic", action="store_true")
     return parser.parse_args()
@@ -76,6 +92,10 @@ def validate_resume_configuration(saved, current):
         "displacement_learning_rate",
         "pressure_learning_rate",
         "clip_norm",
+        "adaptive_loss_balancing",
+        "balance_momentum",
+        "balance_min_weight",
+        "balance_max_weight",
         "data_weight",
         "displacement_data_weight",
         "pressure_data_weight",
@@ -114,8 +134,18 @@ def main():
         raise ValueError("loss weights must be non-negative")
     if min(args.learning_rate, args.displacement_learning_rate, args.pressure_learning_rate) <= 0:
         raise ValueError("learning rates must be positive")
+    if not 0.0 <= args.balance_momentum < 1.0:
+        raise ValueError("balance momentum must be in [0, 1)")
+    if not 0.0 < args.balance_min_weight <= args.balance_max_weight:
+        raise ValueError("adaptive loss-weight bounds must be positive and ordered")
+    if args.adaptive_loss_balancing and args.joint_warmup_epochs < args.epochs:
+        raise ValueError("adaptive loss balancing currently requires joint training for every epoch")
     if args.joint_warmup_epochs < 0:
         raise ValueError("joint warmup epochs must be non-negative")
+    if args.early_stopping_patience < 0:
+        raise ValueError("early stopping patience must be non-negative")
+    if args.early_stopping_min_delta < 0:
+        raise ValueError("early stopping minimum delta must be non-negative")
     if min(args.displacement_steps, args.pressure_steps) < 1:
         raise ValueError("displacement and pressure steps must be positive")
     if args.resume and args.initial_weights is not None:
@@ -192,12 +222,16 @@ def main():
         print(f"initialized_weights={args.initial_weights}")
     optimizer_u = tf.keras.optimizers.Adam(args.displacement_learning_rate)
     optimizer_p = tf.keras.optimizers.Adam(args.pressure_learning_rate)
+    adaptive_weights = tf.Variable(tf.ones(6, dtype=tf.as_dtype(args.dtype)), trainable=False)
     checkpoint = tf.train.Checkpoint(
         epoch=tf.Variable(0, dtype=tf.int64),
         best_validation=tf.Variable(float("inf"), dtype=tf.float32),
         best_validation_score=tf.Variable(float("inf"), dtype=tf.float32),
+        early_stopping_reference=tf.Variable(float("inf"), dtype=tf.float32),
+        best_score_epoch=tf.Variable(0, dtype=tf.int64),
         optimizer_u=optimizer_u,
         optimizer_p=optimizer_p,
+        adaptive_weights=adaptive_weights,
         model=model,
     )
     manager = tf.train.CheckpointManager(checkpoint, str(args.output_dir / "checkpoints"), max_to_keep=3)
@@ -256,12 +290,74 @@ def main():
 
     @tf.function(reduce_retracing=True)
     def joint_train_step(branch_inputs, random_inputs, real_solution):
-        with tf.GradientTape() as tape:
+        with tf.GradientTape(persistent=args.adaptive_loss_balancing) as tape:
             loss_total, loss_components, relative_errors = evaluate_training_loss(
                 branch_inputs, random_inputs, real_solution
             )
         variables = displacement_variables + pressure_flux_variables
-        gradients = tape.gradient(loss_total, variables)
+        if args.adaptive_loss_balancing:
+            # Balance only the three PDE residuals. Boundary and initial
+            # conditions remain fixed at unit weight; allowing inverse-gradient
+            # weighting to suppress them admits the trivial near-zero solution.
+            balanced_component_count = 3
+            component_gradients = []
+            component_norms = []
+            for component in loss_components[:6]:
+                gradients_i = tape.gradient(component, variables)
+                gradients_i = [
+                    tf.zeros_like(variable) if gradient is None else gradient
+                    for gradient, variable in zip(gradients_i, variables)
+                ]
+                component_gradients.append(gradients_i)
+                component_norms.append(tf.linalg.global_norm(gradients_i))
+            balanced_norms = tf.stack(component_norms[:balanced_component_count])
+            mean_norm = tf.reduce_mean(balanced_norms)
+            proposed_weights = mean_norm / tf.maximum(balanced_norms, tf.keras.backend.epsilon())
+            proposed_weights = tf.clip_by_value(
+                proposed_weights, args.balance_min_weight, args.balance_max_weight
+            )
+            proposed_weights *= tf.cast(tf.size(proposed_weights), proposed_weights.dtype) / tf.reduce_sum(
+                proposed_weights
+            )
+            updated_balanced_weights = (
+                args.balance_momentum * adaptive_weights[:balanced_component_count]
+                + (1.0 - args.balance_momentum) * proposed_weights
+            )
+            updated_balanced_weights = tf.clip_by_value(
+                updated_balanced_weights, args.balance_min_weight, args.balance_max_weight
+            )
+            adaptive_weights.assign(
+                tf.concat([updated_balanced_weights, tf.ones(3, dtype=adaptive_weights.dtype)], axis=0)
+            )
+            gradients = [
+                tf.add_n(
+                    [adaptive_weights[index] * component_gradients[index][variable_index] for index in range(6)]
+                )
+                for variable_index in range(len(variables))
+            ]
+            if args.displacement_data_weight or args.pressure_data_weight:
+                # Differentiate the recorded component losses directly. Building
+                # their weighted sum outside the GradientTape context produces
+                # disconnected (None) gradients.
+                displacement_data_gradients = tape.gradient(loss_components[7], variables)
+                pressure_data_gradients = tape.gradient(loss_components[8], variables)
+                gradients = [
+                    gradient
+                    + tf.cast(args.displacement_data_weight, loss_total.dtype)
+                    * (tf.zeros_like(variable) if displacement_data_gradient is None else displacement_data_gradient)
+                    + tf.cast(args.pressure_data_weight, loss_total.dtype)
+                    * (tf.zeros_like(variable) if pressure_data_gradient is None else pressure_data_gradient)
+                    for gradient, displacement_data_gradient, pressure_data_gradient, variable in zip(
+                        gradients, displacement_data_gradients, pressure_data_gradients, variables
+                    )
+                ]
+            loss_total = tf.reduce_sum(adaptive_weights * tf.stack(loss_components[:6])) + (
+                tf.cast(args.displacement_data_weight, loss_total.dtype) * loss_components[7]
+                + tf.cast(args.pressure_data_weight, loss_total.dtype) * loss_components[8]
+            )
+            del tape
+        else:
+            gradients = tape.gradient(loss_total, variables)
         displacement_count = len(displacement_variables)
         displacement_gradients, displacement_gradient_norm = tf.clip_by_global_norm(
             gradients[:displacement_count], args.clip_norm
@@ -280,6 +376,7 @@ def main():
             gradient_norm,
             displacement_gradient_norm,
             pressure_flux_gradient_norm,
+            adaptive_weights,
         )
 
     @tf.function(reduce_retracing=True)
@@ -332,6 +429,7 @@ def main():
                     gradient_norm,
                     displacement_gradient_norm,
                     pressure_flux_gradient_norm,
+                    loss_weights,
                 ) = joint_train_step(*training_batch)
             else:
                 training_phase = "alternating"
@@ -348,6 +446,7 @@ def main():
                 gradient_norm = tf.sqrt(
                     tf.square(displacement_gradient_norm) + tf.square(pressure_flux_gradient_norm)
                 )
+                loss_weights = tf.ones(6, dtype=tf.as_dtype(args.dtype))
             checkpoint.epoch.assign(epoch)
 
             validation_loss = None
@@ -370,6 +469,12 @@ def main():
                 if validation_score < tf.cast(checkpoint.best_validation_score, validation_score.dtype):
                     checkpoint.best_validation_score.assign(tf.cast(validation_score, tf.float32))
                     model.save_weights(args.output_dir / "best.weights.h5")
+                score_threshold = tf.cast(checkpoint.early_stopping_reference, validation_score.dtype) - tf.cast(
+                    args.early_stopping_min_delta, validation_score.dtype
+                )
+                if validation_score < score_threshold:
+                    checkpoint.early_stopping_reference.assign(tf.cast(validation_score, tf.float32))
+                    checkpoint.best_score_epoch.assign(epoch)
 
             if epoch % args.log_every == 0 or validation_loss is not None or epoch == args.epochs:
                 row = {
@@ -394,6 +499,12 @@ def main():
                     "gradient_norm": float(gradient_norm),
                     "displacement_gradient_norm": float(displacement_gradient_norm),
                     "pressure_flux_gradient_norm": float(pressure_flux_gradient_norm),
+                    "weight_pde_u": float(loss_weights[0]),
+                    "weight_mass": float(loss_weights[1]),
+                    "weight_darcy": float(loss_weights[2]),
+                    "weight_boundary_left": float(loss_weights[3]),
+                    "weight_boundary_right": float(loss_weights[4]),
+                    "weight_initial": float(loss_weights[5]),
                     "validation_loss": "" if validation_loss is None else float(validation_loss),
                     "validation_score": "" if validation_score is None else float(validation_score),
                     "validation_relative_l2_u": "" if validation_errors is None else float(validation_errors[0]),
@@ -410,6 +521,17 @@ def main():
 
             if epoch % args.checkpoint_every == 0:
                 manager.save(checkpoint_number=epoch)
+            if (
+                args.early_stopping_patience
+                and validation_score is not None
+                and epoch - int(checkpoint.best_score_epoch.numpy()) >= args.early_stopping_patience
+            ):
+                print(
+                    f"early_stopping epoch={epoch} "
+                    f"best_epoch={int(checkpoint.best_score_epoch.numpy())} "
+                    f"best_score={float(checkpoint.best_validation_score.numpy()):.6e}"
+                )
+                break
     finally:
         manager.save(checkpoint_number=int(checkpoint.epoch.numpy()))
 
